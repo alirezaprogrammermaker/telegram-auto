@@ -1,0 +1,21 @@
+# Minimal runner probe: proves whether GitHub-hosted runners pick up jobs at all,
+# independent of the long-running listener workflow.
+
+name: ci-healthcheck
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Report runner
+        run: |
+          echo "RUNNER_OK $(date -u +%FT%TZ)"
+          uname -a
+          python3 --version
