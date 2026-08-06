@@ -1,0 +1,21 @@
+{
+  "modules": {
+    "auto_reply": {
+      "enabled": false,
+      "reply_text": "سلام! پیام‌ات رسید ✓",
+      "cooldown_seconds": 30,
+      "whitelist": [],
+      "allow_saved_messages": true,
+      "skip_media_only": true
+    },
+    "channel_forward": {
+      "enabled": true,
+      "sources": [],
+      "destination": "",
+      "delay_seconds": 1.5,
+      "forward_mode": "forward",
+      "skip_silent": false,
+      "album_wait_seconds": 1.2
+    }
+  }
+}

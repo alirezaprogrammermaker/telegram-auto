@@ -1,0 +1,15 @@
+.env
+*.session
+*.session-journal
+pending_login.json
+*.lock
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+logs/
+*.log
+.pytest_cache/
+.mypy_cache/
+.idea/
+.vscode/
