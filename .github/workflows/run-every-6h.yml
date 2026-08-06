@@ -1,19 +1,27 @@
-# 6-hour listener cycle for public-repo free runners.
+# Continuous Telegram listener on GitHub-hosted runners.
 #
-# Secrets: API_ID, API_HASH, ADMIN_PASSWORD, TELEGRAM_SESSION_B64
-# TELEGRAM_SESSION_B64 = python scripts/export_session_b64.py
+# How continuity works:
+#   - Only one run may be active (concurrency group, cancel-in-progress: false).
+#   - The cron fires often, so there is almost always one run sitting in the
+#     queue as a standby. GitHub keeps at most one pending run per group.
+#   - The moment the active run ends (6h timeout, or GitHub cancelling it),
+#     the standby is promoted and starts immediately, so the gap is just the
+#     job start-up time instead of waiting for the next cron tick.
 #
-# - timeout-minutes 360 = GitHub-hosted max job length
-# - MAX_RUNTIME_SECONDS ~5h50m clean exit, cron restarts every 6h
-# - No marketplace actions (avoids "Failed to resolve action download info")
-# - Repo should stay public for unlimited standard-runner minutes
-# - Do not run local main.py while this workflow is active
+# Secrets:
+#   API_ID, API_HASH, ADMIN_PASSWORD, TELEGRAM_SESSION_B64, ADMIN_IDS (optional)
+#   TELEGRAM_SESSION_B64 = python scripts/export_session_b64.py
+#
+# Keep the repo public: standard runners are free there with no monthly cap.
+# Never run main.py locally while a run is active — Telegram invalidates a
+# session that is used from two IP addresses at once.
 
 name: run-every-6h
 
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    # Keeps a standby run queued behind the active one.
+    - cron: "*/10 * * * *"
   workflow_dispatch:
     inputs:
       max_runtime_seconds:
@@ -23,7 +31,10 @@ on:
 
 concurrency:
   group: telegram-auto-listener
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   run-bot:
@@ -43,8 +54,8 @@ jobs:
       - name: Install deps
         run: |
           set -euo pipefail
-          python3 -m pip install --upgrade pip
-          python3 -m pip install -r requirements.txt
+          python3 -m pip install --upgrade --quiet pip
+          python3 -m pip install --quiet -r requirements.txt
 
       - name: Prepare data + session
         env:
@@ -73,7 +84,9 @@ jobs:
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
           SESSION_NAME: easy_seen
           LOG_LEVEL: INFO
           MAX_RUNTIME_SECONDS: ${{ inputs.max_runtime_seconds || '21000' }}
+          FLOOD_SLEEP_THRESHOLD: "120"
         run: python3 main.py

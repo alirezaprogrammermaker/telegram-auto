@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
+import signal
 import sys
 
 from app.client import build_client
@@ -24,6 +26,31 @@ def _max_runtime_seconds() -> int:
         return 0
 
 
+def _install_shutdown_handlers(stop_event: asyncio.Event) -> None:
+    """Turn SIGINT/SIGTERM into a graceful disconnect.
+
+    CI runners send SIGTERM when a job is cancelled; disconnecting cleanly
+    keeps Telegram from seeing an abruptly dropped session every time.
+    """
+    loop = asyncio.get_running_loop()
+
+    def _request_stop(reason: str) -> None:
+        if not stop_event.is_set():
+            logger.info("Shutdown requested (%s)", reason)
+            stop_event.set()
+
+    for sig_name in ("SIGINT", "SIGTERM"):
+        sig = getattr(signal, sig_name, None)
+        if sig is None:
+            continue
+        try:
+            loop.add_signal_handler(sig, _request_stop, sig_name)
+        except NotImplementedError:
+            # Windows event loops don't support add_signal_handler.
+            with contextlib.suppress(ValueError, OSError):
+                signal.signal(sig, lambda *_, name=sig_name: _request_stop(name))
+
+
 async def run() -> None:
     config = load_app_config()
     setup_logging(config.log_level, config.root)
@@ -36,8 +63,10 @@ async def run() -> None:
     # Shared with modules (admin commands)
     setattr(client, "app_runtime", runtime)
 
-    stop_task: asyncio.Task[None] | None = None
+    stop_event = asyncio.Event()
     try:
+        _install_shutdown_handlers(stop_event)
+
         await client.connect()
         if not await client.is_user_authorized():
             raise RuntimeError(
@@ -63,25 +92,24 @@ async def run() -> None:
                 max_runtime,
             )
 
-            async def _stop_later() -> None:
-                try:
-                    await asyncio.sleep(max_runtime)
-                    logger.info("MAX_RUNTIME_SECONDS reached; disconnecting cleanly")
-                    await client.disconnect()
-                except asyncio.CancelledError:
-                    raise
-
-            stop_task = asyncio.create_task(_stop_later())
-
         logger.info("App running. Press Ctrl+C to stop.")
-        await client.run_until_disconnected()
+        disconnected = asyncio.ensure_future(client.run_until_disconnected())
+        stopped = asyncio.ensure_future(stop_event.wait())
+        waits = [disconnected, stopped]
+        timeout = max_runtime if max_runtime > 0 else None
+
+        done, pending = await asyncio.wait(
+            waits,
+            timeout=timeout,
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if not done:
+            logger.info("MAX_RUNTIME_SECONDS reached; stopping cleanly")
+        for task in pending:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
     finally:
-        if stop_task and not stop_task.done():
-            stop_task.cancel()
-            try:
-                await stop_task
-            except asyncio.CancelledError:
-                pass
         await stop_modules(list(runtime.loaded.values()))
         if client.is_connected():
             await client.disconnect()

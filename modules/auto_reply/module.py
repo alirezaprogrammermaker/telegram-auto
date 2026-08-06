@@ -19,6 +19,23 @@ from app.storage import load_json, save_json
 logger = logging.getLogger(__name__)
 
 
+def _parse_id_list(raw: Any) -> set[int]:
+    """Accept "111,222" strings or [111, 222] lists of Telegram user ids."""
+    if not raw:
+        return set()
+    items = raw if isinstance(raw, (list, tuple, set)) else str(raw).replace(";", ",").split(",")
+    result: set[int] = set()
+    for item in items:
+        text = str(item).strip()
+        if not text:
+            continue
+        try:
+            result.add(int(text))
+        except ValueError:
+            logger.warning("Ignoring invalid admin id %r", text)
+    return result
+
+
 class AutoReplyModule(BaseModule):
     name = "auto_reply"
 
@@ -63,6 +80,12 @@ class AutoReplyModule(BaseModule):
         self.admins_path = Path(state_name)
         if not self.admins_path.is_absolute():
             self.admins_path = ROOT / self.admins_path
+
+        # CI runners start with an empty data/ dir, so seed trusted admins
+        # from the environment instead of forcing a re-login every restart.
+        self.seed_admins = _parse_id_list(os.environ.get("ADMIN_IDS", "")) | _parse_id_list(
+            config.get("admin_ids")
+        )
 
         self._admins: set[int] = set()
         self._me_id: int | None = None
@@ -808,7 +831,7 @@ class AutoReplyModule(BaseModule):
                     result.add(int(item))
                 except (TypeError, ValueError):
                     continue
-        return result
+        return result | self.seed_admins
 
     def _save_admins(self) -> None:
         save_json(self.admins_path, {"admin_ids": sorted(self._admins)})
@@ -989,6 +1012,12 @@ class AutoReplyModule(BaseModule):
         if self.require_admin and (
             text == self.logout_command or cmd == self.logout_command.lower()
         ):
+            if peer_key in self.seed_admins:
+                await self._send(
+                    event,
+                    "این اکانت به‌صورت ثابت در `ADMIN_IDS` مدیر است و با /logout خارج نمی‌شود.",
+                )
+                return
             if peer_key in self._admins:
                 self._admins.discard(peer_key)
                 self._save_admins()

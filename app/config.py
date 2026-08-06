@@ -26,6 +26,7 @@ class AppConfig:
     lock_file: Path
     root: Path
     modules: dict[str, dict[str, Any]]
+    flood_sleep_threshold: int
 
 
 def load_app_config() -> AppConfig:
@@ -42,6 +43,11 @@ def load_app_config() -> AppConfig:
     lock_name = os.environ.get("LOCK_FILE", "telegram_auto.lock")
     lock_file = ROOT / lock_name
 
+    try:
+        flood_threshold = int(os.environ.get("FLOOD_SLEEP_THRESHOLD", "120"))
+    except ValueError:
+        flood_threshold = 120
+
     modules = _load_modules_config()
     return AppConfig(
         api_id=int(api_id_raw),
@@ -52,6 +58,7 @@ def load_app_config() -> AppConfig:
         lock_file=lock_file,
         root=ROOT,
         modules=modules,
+        flood_sleep_threshold=max(0, flood_threshold),
     )
 
 
