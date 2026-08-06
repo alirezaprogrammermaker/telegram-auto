@@ -74,45 +74,31 @@ python main.py
 
 هدف: job زمان‌بندی‌شده که **شروع می‌شود، چند ساعت گوش می‌دهد، تمیز خارج می‌شود** — نه سرور همیشه روشن.
 
-### ۱) ریپو روی GitHub
+### مدل اجرا
 
-```bash
-gh repo create telegram-auto --private --source=. --remote=origin --push
-```
+- هر job حداکثر **۶ ساعت** روی runner گیت‌هاب می‌ماند (`timeout-minutes: 360`)
+- قبل از kill سخت، با `MAX_RUNTIME_SECONDS=21000` (~۵ ساعت و ۵۰ دقیقه) تمیز قطع می‌شود
+- cron `0 */6 * * *` هر ۶ ساعت دوباره روشن می‌کند
+- برای **بدون سقف دقیقه**: ریپو باید **public** باشد (runner استاندارد روی public رایگان است). روی private سهمیه ماهانه محدود است و job ممکن است زود قطع شود
 
-(یا ریپوی خالی بساز و `git remote add origin ...` سپس `git push -u origin master`)
-
-### ۲) Secrets
-
-در Settings → Secrets and variables → Actions این‌ها را بگذار:
+### Secrets
 
 | Secret | مقدار |
 |--------|--------|
 | `API_ID` | همان `.env` |
 | `API_HASH` | همان `.env` |
 | `ADMIN_PASSWORD` | رمز مدیر |
-| `TELEGRAM_SESSION_B64` | خروجی دستور زیر |
+| `TELEGRAM_SESSION_B64` | خروجی `python scripts/export_session_b64.py` |
 
-```bash
-python scripts/export_session_b64.py
-```
+کد public است؛ Secretها در Settings → Actions می‌مانند و در ریپو commit نمی‌شوند.
 
-کل خروجی یک‌خطی را در Secret کپی کن (قبلش باید لوکال لاگین کرده باشی و فایل `easy_seen.session` موجود باشد).
+### اجرا
 
-### ۳) اجرا
-
-- خودکار: cron هر ۶ ساعت (`0 */6 * * *`)
+- خودکار: هر ۶ ساعت
 - دستی: Actions → `run-every-6h` → Run workflow
-- هر run حدود `MAX_RUNTIME_SECONDS=21000` (~۵ ساعت و ۵۰ دقیقه) کار می‌کند و تمیز قطع می‌شود
+- همزمان با workflow، `main.py` لوکال را روشن نکن (همان سشن باطل می‌شود)
 
-### محدودیت‌ها (مهم)
-
-- روی ریپوی **خصوصی**، دقیقه رایگان Actions محدود است؛ ۴ بار × ۶ ساعت در روز خیلی زود تموم می‌شود
-- بین runها چند دقیقه/ساعت اپ خاموش است (پست‌های آن بازه فوروارد نمی‌شوند مگر صف محلی؛ روی GHA صف بین runها با cache می‌ماند)
-- IP دیتای گیت‌هاب برای userbot ریسک محدودیت دارد
-- برای همیشه روشن: **VPS** بهتر از GHA است
-
-فایل workflow: `.github/workflows/run-every-6h.yml`
+فایل: `.github/workflows/run-every-6h.yml`
 
 ## افزودن ماژول جدید
 
