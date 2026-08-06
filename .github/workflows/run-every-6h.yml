@@ -1,14 +1,13 @@
-# Long-running listener on a 6-hour cycle.
+# 6-hour listener cycle for public-repo free runners.
 #
-# Required Secrets: API_ID, API_HASH, ADMIN_PASSWORD, TELEGRAM_SESSION_B64
-#   TELEGRAM_SESSION_B64 = python scripts/export_session_b64.py
+# Secrets: API_ID, API_HASH, ADMIN_PASSWORD, TELEGRAM_SESSION_B64
+# TELEGRAM_SESSION_B64 = python scripts/export_session_b64.py
 #
-# Design:
-# - Job timeout = 6h (GitHub-hosted max). Clean exit ~5h50m via MAX_RUNTIME_SECONDS.
-# - cron every 6h restarts the next window.
-# - Standard runners are free for public repos (no monthly minute cap).
-# - Keep the repo public for unrestricted minute usage.
-# - Never run local main.py while this workflow is active (same session).
+# - timeout-minutes 360 = GitHub-hosted max job length
+# - MAX_RUNTIME_SECONDS ~5h50m clean exit, cron restarts every 6h
+# - No marketplace actions (avoids "Failed to resolve action download info")
+# - Repo should stay public for unlimited standard-runner minutes
+# - Do not run local main.py while this workflow is active
 
 name: run-every-6h
 
@@ -31,28 +30,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - name: Checkout repo
+        run: |
+          set -euo pipefail
+          rm -rf ./* ./.[!.]* 2>/dev/null || true
+          git clone --depth 1 --branch master \
+            "https://github.com/${GITHUB_REPOSITORY}.git" repo
+          shopt -s dotglob
+          mv repo/* .
+          rm -rf repo
 
       - name: Install deps
-        run: pip install -r requirements.txt
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
 
-      - name: Restore data cache
-        uses: actions/cache@v4
-        with:
-          path: data
-          key: runtime-data-${{ github.run_id }}
-          restore-keys: |
-            runtime-data-
-
-      - name: Restore session from Secret
+      - name: Prepare data + session
         env:
           TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
         run: |
-          python - <<'PY'
+          python3 - <<'PY'
           import base64, os, pathlib, sys
 
           pathlib.Path("data").mkdir(exist_ok=True)
@@ -67,7 +65,7 @@ jobs:
 
           session = pathlib.Path("easy_seen.session")
           session.write_bytes(base64.b64decode(raw))
-          print(f"Session restored from secret ({session.stat().st_size} bytes)")
+          print(f"Session restored ({session.stat().st_size} bytes)")
           PY
 
       - name: Run app
@@ -78,12 +76,4 @@ jobs:
           SESSION_NAME: easy_seen
           LOG_LEVEL: INFO
           MAX_RUNTIME_SECONDS: ${{ inputs.max_runtime_seconds || '21000' }}
-        run: python main.py
-
-      - name: Ensure data dir for cache
-        if: always()
-        run: |
-          mkdir -p data
-          test -f data/admins.json || echo '{"admin_ids":[]}' > data/admins.json
-
-
+        run: python3 main.py
