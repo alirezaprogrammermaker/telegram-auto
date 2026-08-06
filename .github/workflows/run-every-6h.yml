@@ -1,12 +1,7 @@
-# Continuous Telegram listener on GitHub-hosted runners.
+# Telegram listener on GitHub-hosted runners.
 #
-# How continuity works:
-#   - Only one run may be active (concurrency group, cancel-in-progress: false).
-#   - The cron fires often, so there is almost always one run sitting in the
-#     queue as a standby. GitHub keeps at most one pending run per group.
-#   - The moment the active run ends (6h timeout, or GitHub cancelling it),
-#     the standby is promoted and starts immediately, so the gap is just the
-#     job start-up time instead of waiting for the next cron tick.
+# Cycle: cron starts a run every 6h, the app exits cleanly after 5h55m,
+# leaving a ~5 minute gap before the next run.
 #
 # Secrets:
 #   API_ID, API_HASH, ADMIN_PASSWORD, TELEGRAM_SESSION_B64, ADMIN_IDS (optional)
@@ -20,14 +15,13 @@ name: run-every-6h
 
 on:
   schedule:
-    # Keeps a standby run queued behind the active one.
-    - cron: "*/10 * * * *"
+    - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
       max_runtime_seconds:
-        description: "Seconds to run before clean exit (default ~5h50m)"
+        description: "Seconds to run before clean exit (default 5h55m)"
         required: false
-        default: "21000"
+        default: "21300"
 
 concurrency:
   group: telegram-auto-listener
@@ -87,6 +81,6 @@ jobs:
           ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
           SESSION_NAME: easy_seen
           LOG_LEVEL: INFO
-          MAX_RUNTIME_SECONDS: ${{ inputs.max_runtime_seconds || '21000' }}
+          MAX_RUNTIME_SECONDS: ${{ inputs.max_runtime_seconds || '21300' }}
           FLOOD_SLEEP_THRESHOLD: "120"
         run: python3 main.py
