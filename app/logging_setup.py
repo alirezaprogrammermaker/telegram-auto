@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -10,6 +11,12 @@ def setup_logging(level: str = "INFO", root: Path | None = None) -> None:
     root = root or Path(__file__).resolve().parent.parent
     logs_dir = root / "logs"
     logs_dir.mkdir(parents=True, exist_ok=True)
+
+    # Windows consoles often default to cp1252 and crash on Persian log text.
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
     log_level = getattr(logging, level.upper(), logging.INFO)
     fmt = logging.Formatter(
@@ -21,7 +28,7 @@ def setup_logging(level: str = "INFO", root: Path | None = None) -> None:
     root_logger.handlers.clear()
     root_logger.setLevel(log_level)
 
-    console = logging.StreamHandler()
+    console = logging.StreamHandler(sys.stdout)
     console.setFormatter(fmt)
     console.setLevel(log_level)
     root_logger.addHandler(console)

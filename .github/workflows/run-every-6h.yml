@@ -1,0 +1,58 @@
+# Scheduled long-running job (~6h). Prefer a VPS for production listeners.
+# Secrets required: API_ID, API_HASH, ADMIN_PASSWORD, TELEGRAM_SESSION_B64
+# TELEGRAM_SESSION_B64 = base64 of local easy_seen.session after login.
+
+name: run-every-6h
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: pip install -r requirements.txt
+
+      - name: Restore session file
+        env:
+          TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
+        run: |
+          python - <<'PY'
+          import base64, os, pathlib
+          raw = os.environ["TELEGRAM_SESSION_B64"]
+          pathlib.Path("easy_seen.session").write_bytes(base64.b64decode(raw))
+          pathlib.Path("data").mkdir(exist_ok=True)
+          PY
+
+      - name: Restore admins cache
+        uses: actions/cache@v4
+        with:
+          path: data/admins.json
+          key: admins-${{ github.run_id }}
+          restore-keys: |
+            admins-
+
+      - name: Run app
+        env:
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          SESSION_NAME: easy_seen
+          LOG_LEVEL: INFO
+        run: python main.py
+
+      - name: Keep admins cache warm
+        if: always()
+        run: |
+          mkdir -p data
+          test -f data/admins.json || echo '{"admin_ids":[]}' > data/admins.json

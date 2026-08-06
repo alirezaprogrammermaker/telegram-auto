@@ -1,19 +1,54 @@
 {
   "modules": {
     "auto_reply": {
-      "enabled": false,
+      "enabled": true,
       "reply_text": "سلام! پیام‌ات رسید ✓",
-      "cooldown_seconds": 30,
+      "cooldown_seconds": 0,
       "whitelist": [],
       "allow_saved_messages": true,
-      "skip_media_only": true
+      "skip_media_only": true,
+      "show_typing": true,
+      "typing_seconds": 1.5,
+      "require_admin": true,
+      "admin_password": "",
+      "admin_welcome": "دسترسی مدیر فعال شد.",
+      "logout_command": "/logout",
+      "logout_message": "دسترسی مدیر غیرفعال شد.",
+      "delete_password_message": true,
+      "help_commands": ["/help", "/commands", "دستورات", "help"],
+      "send_help_on_login": true,
+      "admins_file": "data/admins.json"
     },
     "channel_forward": {
       "enabled": true,
-      "sources": [],
-      "destination": "",
+      "routes": [
+        {
+          "source": "@channe_l_1",
+          "destination": "@channe_l_2",
+          "enabled": true,
+          "forward_mode": "copy",
+          "filter": {
+            "enabled": true,
+            "remove_links": false,
+            "remove_mentions": false,
+            "remove_hashtags": false,
+            "remove_ids": false,
+            "prefix": "ابتدای متن",
+            "suffix": "",
+            "collapse_whitespace": true,
+            "block_enabled": false,
+            "block_words": []
+          },
+          "schedule": {
+            "enabled": false,
+            "timezone": "Asia/Tehran",
+            "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+            "windows": []
+          }
+        }
+      ],
       "delay_seconds": 1.5,
-      "forward_mode": "forward",
+      "forward_mode": "copy",
       "skip_silent": false,
       "album_wait_seconds": 1.2
     }

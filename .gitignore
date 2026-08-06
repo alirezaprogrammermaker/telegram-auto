@@ -7,8 +7,10 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+data/
 logs/
 *.log
+
 .pytest_cache/
 .mypy_cache/
 .idea/

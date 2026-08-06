@@ -11,7 +11,7 @@ pip install -r requirements.txt
 copy .env.example .env
 ```
 
-`.env` را با `API_ID` / `API_HASH` / `PHONE` پر کن.
+`.env` را با `API_ID` / `API_HASH` / `PHONE` / `ADMIN_PASSWORD` پر کن.
 
 ### Login
 
@@ -36,8 +36,17 @@ python main.py
 
 | Module | توضیح |
 |--------|--------|
-| `channel_forward` | پست‌های کانال مبدأ را به کانال شما فوروارد می‌کند |
-| `auto_reply` | جواب خودکار به پیام خصوصی (پیش‌فرض خاموش) |
+| `channel_forward` | پست‌های کانال مبدأ را به کانال مقصد کپی/فوروارد می‌کند |
+| `auto_reply` | جواب خودکار فقط برای کاربرانی که با کلمه رمز مدیر شده‌اند |
+
+### auto_reply (admin unlock)
+
+1. کاربر کلمه رمز (`ADMIN_PASSWORD` در `.env`) را در چت خصوصی می‌فرستد.
+2. دسترسی مدیر ذخیره می‌شود در `data/admins.json`.
+3. بعد از آن به پیام‌هایش جواب داده می‌شود.
+4. برای خروج: `/logout`
+
+رمز را در گیت نگذار؛ فقط در `.env` یا GitHub Secret.
 
 ### channel_forward
 
@@ -47,29 +56,45 @@ python main.py
   "sources": ["@source_channel"],
   "destination": "@your_channel",
   "delay_seconds": 1.5,
-  "forward_mode": "forward",
-  "album_wait_seconds": 1.2
+  "forward_mode": "copy"
 }
 ```
 
-- اکانت باید عضو کانال مبدأ باشد و در کانال مقصد حق ارسال داشته باشد.
-- `forward_mode`: `forward` (با برچسب فوروارد) یا `copy` (بدون فوروارد).
-- آلبوم‌های چندرسانه‌ای پشتیبانی می‌شوند.
+## Keyboards / دکمه‌ها
 
-### افزودن ماژول جدید
+| قابلیت | روی user account (Telethon فعلی) | روی Bot API |
+|--------|-----------------------------------|-------------|
+| Reply Keyboard / Inline Keyboard | عملاً مناسب نیست؛ طراحی تلگرام برای ربات است | کامل پشتیبانی می‌شود |
+| Callback دکمه | نیاز به bot دارد | بله |
+| typing / پاسخ متنی / فوروارد | بله | بله |
 
-1. پوشه `modules/<name>/module.py` با کلاسی که از `BaseModule` ارث می‌برد
+اگر منوی دکمه‌ای می‌خواهی، باید یک **ربات BotFather** جدا بسازی یا کنار این user-client اضافه کنی. با اکانت کاربری فعلی، کیبورد حرفه‌ای قابل اتکا نیست.
+
+## GitHub Actions (هر ۶ ساعت)
+
+هدف «۶ ساعت به ۶ ساعت» با runner گیت‌هاب یعنی معمولاً job زمان‌بندی‌شده که **شروع می‌شود، چند ساعت کار می‌کند، تمام می‌شود** — نه سرور همیشه روشن.
+
+الزامات طراحی فعلی که با GHA سازگار است:
+- Secretها فقط از env (`API_ID`, `API_HASH`, `ADMIN_PASSWORD`, session)
+- state مدیر در `data/admins.json` (قابل ذخیره به‌صورت artifact بین runها)
+- ماژول خراب برنامه را نمی‌خواباند
+- بدون login تعاملی روی CI
+
+محدودیت‌ها:
+- session فایل باید به‌صورت Secret/Artifact بین runها جابه‌جا شود
+- job طولانی (تا ~۶ ساعت) دقیقه مصرف می‌کند و ممکن است قطع شود
+- IP دیتای گیت‌هاب برای userbot ریسک بن بالاتری دارد
+- برای listener دائمی، VPS پایدار بهتر از GHA است
+
+نمونه workflow: `.github/workflows/run-every-6h.yml`
+
+## افزودن ماژول جدید
+
+1. `modules/<name>/module.py` از `BaseModule`
 2. ثبت در `app/loader.py` → `MODULE_REGISTRY`
-3. بخش تنظیمات در `config/modules.json` با `"enabled": true/false`
+3. تنظیمات در `config/modules.json`
 
-اگر import یا `start()` ماژول شکست بخورد، فقط همان ماژول رد می‌شود.
+## Safety
 
-## Safety notes
-
-- این client غیررسمی (userbot) است؛ اتوماسیون زیاد ریسک محدودیت/بن دارد.
-- برای فوروارد: تأخیر (`delay_seconds`) را خیلی کم نگذار.
-- Secretها (`.env`, `*.session`) در گیت نیستند.
-
-## Legacy
-
-`reply_bot.py` حذف شده؛ معادل آن ماژول `auto_reply` است (در صورت نیاز روشن کن).
+- userbot غیررسمی است؛ اتوماسیون زیاد ریسک محدودیت دارد.
+- `.env`, `*.session`, `data/` در گیت نیستند.

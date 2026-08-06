@@ -9,6 +9,7 @@ from app.client import build_client
 from app.config import load_app_config
 from app.loader import load_modules, stop_modules
 from app.logging_setup import setup_logging
+from app.runtime import ModuleRuntime
 from app.singleton import ProcessLock
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,9 @@ async def run() -> None:
     lock.acquire()
 
     client = build_client(config)
-    modules: list = []
+    runtime = ModuleRuntime(client, config.modules)
+    # Shared with modules (admin commands)
+    setattr(client, "app_runtime", runtime)
 
     try:
         await client.connect()
@@ -41,10 +44,11 @@ async def run() -> None:
         )
 
         modules = await load_modules(client, config.modules)
+        runtime.bind_loaded(modules)
         logger.info("App running. Press Ctrl+C to stop.")
         await client.run_until_disconnected()
     finally:
-        await stop_modules(modules)
+        await stop_modules(list(runtime.loaded.values()))
         if client.is_connected():
             await client.disconnect()
         lock.release()
