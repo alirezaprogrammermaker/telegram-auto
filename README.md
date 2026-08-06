@@ -72,21 +72,47 @@ python main.py
 
 ## GitHub Actions (هر ۶ ساعت)
 
-هدف «۶ ساعت به ۶ ساعت» با runner گیت‌هاب یعنی معمولاً job زمان‌بندی‌شده که **شروع می‌شود، چند ساعت کار می‌کند، تمام می‌شود** — نه سرور همیشه روشن.
+هدف: job زمان‌بندی‌شده که **شروع می‌شود، چند ساعت گوش می‌دهد، تمیز خارج می‌شود** — نه سرور همیشه روشن.
 
-الزامات طراحی فعلی که با GHA سازگار است:
-- Secretها فقط از env (`API_ID`, `API_HASH`, `ADMIN_PASSWORD`, session)
-- state مدیر در `data/admins.json` (قابل ذخیره به‌صورت artifact بین runها)
-- ماژول خراب برنامه را نمی‌خواباند
-- بدون login تعاملی روی CI
+### ۱) ریپو روی GitHub
 
-محدودیت‌ها:
-- session فایل باید به‌صورت Secret/Artifact بین runها جابه‌جا شود
-- job طولانی (تا ~۶ ساعت) دقیقه مصرف می‌کند و ممکن است قطع شود
-- IP دیتای گیت‌هاب برای userbot ریسک بن بالاتری دارد
-- برای listener دائمی، VPS پایدار بهتر از GHA است
+```bash
+gh repo create telegram-auto --private --source=. --remote=origin --push
+```
 
-نمونه workflow: `.github/workflows/run-every-6h.yml`
+(یا ریپوی خالی بساز و `git remote add origin ...` سپس `git push -u origin master`)
+
+### ۲) Secrets
+
+در Settings → Secrets and variables → Actions این‌ها را بگذار:
+
+| Secret | مقدار |
+|--------|--------|
+| `API_ID` | همان `.env` |
+| `API_HASH` | همان `.env` |
+| `ADMIN_PASSWORD` | رمز مدیر |
+| `TELEGRAM_SESSION_B64` | خروجی دستور زیر |
+
+```bash
+python scripts/export_session_b64.py
+```
+
+کل خروجی یک‌خطی را در Secret کپی کن (قبلش باید لوکال لاگین کرده باشی و فایل `easy_seen.session` موجود باشد).
+
+### ۳) اجرا
+
+- خودکار: cron هر ۶ ساعت (`0 */6 * * *`)
+- دستی: Actions → `run-every-6h` → Run workflow
+- هر run حدود `MAX_RUNTIME_SECONDS=21000` (~۵ ساعت و ۵۰ دقیقه) کار می‌کند و تمیز قطع می‌شود
+
+### محدودیت‌ها (مهم)
+
+- روی ریپوی **خصوصی**، دقیقه رایگان Actions محدود است؛ ۴ بار × ۶ ساعت در روز خیلی زود تموم می‌شود
+- بین runها چند دقیقه/ساعت اپ خاموش است (پست‌های آن بازه فوروارد نمی‌شوند مگر صف محلی؛ روی GHA صف بین runها با cache می‌ماند)
+- IP دیتای گیت‌هاب برای userbot ریسک محدودیت دارد
+- برای همیشه روشن: **VPS** بهتر از GHA است
+
+فایل workflow: `.github/workflows/run-every-6h.yml`
 
 ## افزودن ماژول جدید
 

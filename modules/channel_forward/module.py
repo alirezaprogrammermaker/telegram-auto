@@ -48,6 +48,7 @@ from telethon.tl.types import (
 from app.base import BaseModule
 from app.progress import ProgressMessenger
 from app.stats import StatsStore
+from modules.channel_forward.access import normalize_visibility
 from modules.channel_forward.filters import TextFilterConfig, apply_text_filter
 from modules.channel_forward.queue import PublishQueue
 from modules.channel_forward.schedule import ScheduleConfig
@@ -271,6 +272,13 @@ def migrate_routes(config: dict[str, Any]) -> list[dict[str, Any]]:
                     "forward_mode": item.get("forward_mode"),
                     "filter": TextFilterConfig.from_dict(item.get("filter")).to_dict(),
                     "schedule": ScheduleConfig.from_dict(item.get("schedule")).to_dict(),
+                    "owner_id": item.get("owner_id"),
+                    # legacy routes without owner stay visible to all admins
+                    "visibility": (
+                        "public"
+                        if item.get("owner_id") in (None, "")
+                        else normalize_visibility(item.get("visibility"))
+                    ),
                 }
             )
         return cleaned
@@ -287,6 +295,8 @@ def migrate_routes(config: dict[str, Any]) -> list[dict[str, Any]]:
                 "forward_mode": None,
                 "filter": TextFilterConfig().to_dict(),
                 "schedule": ScheduleConfig().to_dict(),
+                "owner_id": None,
+                "visibility": "public",
             }
             for src in sources
             if src

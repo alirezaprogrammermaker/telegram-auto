@@ -48,7 +48,8 @@ class AutoReplyModule(BaseModule):
         )
         self.logout_command = str(config.get("logout_command") or "/logout").strip()
         self.logout_message = str(
-            config.get("logout_message") or "دسترسی مدیر غیرفعال شد."
+            config.get("logout_message")
+            or "دسترسی مدیر غیرفعال شد.\nبرای ورود دوباره فقط رمز را بفرست یا: /login"
         )
         self.delete_password_message = bool(config.get("delete_password_message", True))
         self.help_commands = {
@@ -83,11 +84,14 @@ class AutoReplyModule(BaseModule):
             (help_aliases, "لیست دستورات مدیر"),
             ("/modules", "وضعیت ماژول‌ها و راهنمای مدیریت"),
             ("/module on|off|reload <name>", "روشن/خاموش/ری‌لود ماژول"),
-            ("/forward status", "لیست مسیرها (مبدأ → مقصد)"),
-            ("/forward add <source> <dest>", "افزودن مسیر جدید"),
+            ("/forward status", "مسیرهای قابل‌مشاهده برای تو (خصوصی دیگران مخفی)"),
+            ("/forward mine", "فقط مسیرهایی که مال خودت است"),
+            ("/forward add <source> <dest>", "افزودن مسیر خصوصی برای خودت"),
             ("/forward remove <source>", "حذف مسیر بر اساس مبدأ"),
             ("/forward set <source> <dest>", "تغییر مقصد یک مبدأ"),
             ("/forward mode <source> copy|forward", "حالت ارسال همان مسیر"),
+            ("/forward visibility <source> public|private", "عمومی/خصوصی کردن مسیر"),
+            ("/forward claim <source>", "مالک شدن مسیر بدون owner"),
             ("/forward filter <source>", "وضعیت فیلتر متن مسیر"),
             ("/forward filter <source> on|off", "روشن/خاموش کردن فیلتر"),
             ("/stats", "آمار امروز فوروارد/بلاک/صف"),
@@ -104,7 +108,9 @@ class AutoReplyModule(BaseModule):
             ("/forward filter <source> ids|آیدی on|off", "حذف آیدی عددی"),
             ("/forward filter <source> prefix|suffix <text|off>", "متن اول/آخر (\\n برای خط جدید)"),
             (self.logout_command, "خروج از حالت مدیر"),
-            ("<کلمه رمز>", "فعال‌سازی دسترسی مدیر (فقط یک‌بار برای ورود)"),
+            ("/login", "راهنمای ورود دوباره"),
+            ("/login <رمز>", "ورود مدیر با رمز"),
+            ("<کلمه رمز>", "فعال‌سازی دسترسی مدیر"),
         ]
 
     def _build_help_text(self) -> str:
@@ -160,12 +166,19 @@ class AutoReplyModule(BaseModule):
         self,
         parts: list[str],
         progress: ProgressMessenger,
+        actor_id: int,
     ) -> None:
         runtime = self._runtime()
         if runtime is None:
             await progress.fail("سیستم مدیریت ماژول در دسترس نیست.")
             return
 
+        from modules.channel_forward.access import (
+            can_edit_route,
+            can_view_route,
+            normalize_visibility,
+            visibility_label,
+        )
         from modules.channel_forward.module import (
             display_ref,
             ensure_can_post,
@@ -183,34 +196,70 @@ class AutoReplyModule(BaseModule):
         cfg.pop("sources", None)
         cfg.pop("destination", None)
 
-        if len(parts) == 1 or parts[1].lower() in {"status", "check"}:
-            await progress.set_title("📡 بررسی مسیرهای فوروارد")
+        def _visible_routes() -> list[dict]:
+            return [r for r in routes if can_view_route(r, actor_id)]
+
+        def _find_route(source: str, *, need_edit: bool = False) -> dict | None:
+            for route in routes:
+                if not (
+                    str(route.get("source")) == source
+                    or display_ref(route.get("source")) == display_ref(source)
+                ):
+                    continue
+                if need_edit and not can_edit_route(route, actor_id):
+                    return None
+                if not need_edit and not can_view_route(route, actor_id):
+                    return None
+                return route
+            return None
+
+        if len(parts) == 1 or parts[1].lower() in {"status", "check", "mine"}:
+            only_mine = len(parts) > 1 and parts[1].lower() == "mine"
+            await progress.set_title("📡 مسیرهای قابل‌مشاهده برای تو")
             running = "channel_forward" in runtime.loaded
             enabled = bool(cfg.get("enabled"))
             await progress.step(
                 f"ماژول: {'ON' if enabled else 'OFF'} / "
                 f"{'running' if running else 'stopped'}"
             )
-            if not routes:
-                await progress.success("هیچ مسیری تعریف نشده.")
+            shown = _visible_routes()
+            if only_mine:
+                shown = [
+                    r
+                    for r in shown
+                    if r.get("owner_id") is not None and int(r["owner_id"]) == actor_id
+                ]
+            if not shown:
+                await progress.success(
+                    "مسیری برای نمایش نیست.\n"
+                    "مسیرهای خصوصی دیگران دیده نمی‌شوند مگر public باشند."
+                )
                 return
 
-            for i, route in enumerate(routes, start=1):
+            do_check = len(parts) > 1 and parts[1].lower() in {"status", "check"}
+            for i, route in enumerate(shown, start=1):
                 src = display_ref(route["source"])
                 dest = display_ref(route["destination"])
-                await progress.step(f"مسیر {i}: `{src}` → `{dest}`")
-                try:
-                    await ensure_joined(
-                        self.client, route["source"], progress, label="مبدأ"
-                    )
-                    _, reason = await ensure_can_post(
-                        self.client, route["destination"], progress, auto_join=True
-                    )
-                    await progress.step(f"نتیجه مسیر {i}: آماده ({reason})")
-                except Exception as exc:
-                    await progress.step(f"مسیر {i} خطا: {exc}")
+                await progress.step(
+                    f"{i}) `{src}` → `{dest}` [{visibility_label(route)}]"
+                )
+                if do_check:
+                    try:
+                        await ensure_joined(
+                            self.client, route["source"], progress, label="مبدأ"
+                        )
+                        _, reason = await ensure_can_post(
+                            self.client, route["destination"], progress, auto_join=True
+                        )
+                        await progress.step(f"نتیجه: آماده ({reason})")
+                    except Exception as exc:
+                        await progress.step(f"خطا: {exc}")
 
-            await progress.success("بررسی مسیرها تمام شد.")
+            await progress.success(
+                "تمام.\n"
+                "`/forward visibility <source> public|private`\n"
+                "`/forward mine` فقط مسیرهای خودت"
+            )
             return
 
         action = parts[1].lower()
@@ -224,10 +273,15 @@ class AutoReplyModule(BaseModule):
                 if str(route.get("source")) == source or display_ref(
                     route.get("source")
                 ) == display_ref(source):
-                    await progress.fail(
-                        f"مبدأ از قبل مسیر دارد → `{display_ref(route.get('destination'))}`.\n"
-                        f"برای تغییر: `/forward set {source} {dest}`"
-                    )
+                    if can_view_route(route, actor_id):
+                        await progress.fail(
+                            f"مبدأ از قبل مسیر دارد → `{display_ref(route.get('destination'))}`.\n"
+                            f"برای تغییر: `/forward set {source} {dest}`"
+                        )
+                    else:
+                        await progress.fail(
+                            "این مبدأ توسط مدیر دیگری به‌صورت خصوصی ثبت شده است."
+                        )
                     return
             try:
                 await ensure_joined(self.client, source, progress, label="مبدأ")
@@ -238,13 +292,15 @@ class AutoReplyModule(BaseModule):
                 await progress.fail(str(exc))
                 return
 
-            await progress.step("ذخیره مسیر در کانفیگ")
+            await progress.step("ذخیره مسیر خصوصی برای تو")
             routes.append(
                 {
                     "source": source,
                     "destination": dest,
                     "enabled": True,
                     "forward_mode": None,
+                    "owner_id": actor_id,
+                    "visibility": "private",
                     "filter": {
                         "enabled": False,
                         "remove_links": False,
@@ -269,21 +325,78 @@ class AutoReplyModule(BaseModule):
                 "channel_forward",
                 {"routes": routes, "enabled": True},
             )
-            await progress.success(f"مسیر اضافه شد ({reason}).\n{result}")
+            await progress.success(
+                f"مسیر خصوصی اضافه شد ({reason}).\n"
+                f"برای عمومی کردن: `/forward visibility {source} public`\n{result}"
+            )
+            return
+
+        if action == "visibility" and len(parts) >= 4:
+            source, vis_raw = parts[2].strip(), parts[3].strip()
+            route = _find_route(source, need_edit=True)
+            if route is None:
+                await progress.fail("مسیر پیدا نشد یا اجازه ویرایش نداری.")
+                return
+            vis = normalize_visibility(vis_raw)
+            route["visibility"] = vis
+            if route.get("owner_id") is None:
+                route["owner_id"] = actor_id
+            result = await runtime.patch_module_config(
+                "channel_forward",
+                {"routes": routes},
+            )
+            await progress.success(f"visibility=`{vis}`\n{result}")
+            return
+
+        if action == "claim" and len(parts) >= 3:
+            source = parts[2].strip()
+            route = None
+            for item in routes:
+                if str(item.get("source")) == source or display_ref(
+                    item.get("source")
+                ) == display_ref(source):
+                    route = item
+                    break
+            if route is None:
+                await progress.fail("مسیر پیدا نشد.")
+                return
+            if route.get("owner_id") not in (None, ""):
+                if int(route["owner_id"]) == actor_id:
+                    await progress.success("از قبل مال خودت است.")
+                else:
+                    await progress.fail("این مسیر مالک دیگری دارد.")
+                return
+            route["owner_id"] = actor_id
+            route["visibility"] = normalize_visibility(
+                route.get("visibility") or "private"
+            )
+            result = await runtime.patch_module_config(
+                "channel_forward",
+                {"routes": routes},
+            )
+            await progress.success(
+                f"مالکیت ثبت شد (visibility={route['visibility']}).\n{result}"
+            )
             return
 
         if action == "remove" and len(parts) >= 3:
             source = parts[2].strip()
             await progress.set_title(f"⏳ حذف مسیر مبدأ `{display_ref(source)}`")
-            new_routes = [
-                r
-                for r in routes
-                if str(r.get("source")) != source
-                and display_ref(r.get("source")) != display_ref(source)
-            ]
-            if len(new_routes) == len(routes):
-                await progress.fail(f"مسیری با مبدأ `{display_ref(source)}` پیدا نشد.")
+            route = _find_route(source, need_edit=True)
+            if route is None:
+                exists = any(
+                    str(r.get("source")) == source
+                    or display_ref(r.get("source")) == display_ref(source)
+                    for r in routes
+                )
+                if exists:
+                    await progress.fail("اجازه حذف این مسیر را نداری.")
+                else:
+                    await progress.fail(
+                        f"مسیری با مبدأ `{display_ref(source)}` پیدا نشد."
+                    )
                 return
+            new_routes = [r for r in routes if r is not route]
             await progress.step("به‌روزرسانی کانفیگ و ری‌لود ماژول")
             result = await runtime.patch_module_config(
                 "channel_forward",
@@ -297,32 +410,25 @@ class AutoReplyModule(BaseModule):
             await progress.set_title(
                 f"⏳ تغییر مقصد `{display_ref(source)}` → `{display_ref(dest)}`"
             )
-            for route in routes:
-                if str(route.get("source")) == source or display_ref(
-                    route.get("source")
-                ) == display_ref(source):
-                    try:
-                        await ensure_joined(
-                            self.client, source, progress, label="مبدأ"
-                        )
-                        _, reason = await ensure_can_post(
-                            self.client, dest, progress, auto_join=True
-                        )
-                    except ValueError as exc:
-                        await progress.fail(str(exc))
-                        return
-                    route["destination"] = dest
-                    await progress.step("ذخیره و ری‌لود")
-                    result = await runtime.patch_module_config(
-                        "channel_forward",
-                        {"routes": routes},
-                    )
-                    await progress.success(f"مقصد عوض شد ({reason}).\n{result}")
-                    return
-            await progress.fail(
-                f"مبدأ `{display_ref(source)}` نیست. "
-                f"با `/forward add {source} {dest}` بساز."
+            route = _find_route(source, need_edit=True)
+            if route is None:
+                await progress.fail("مسیر پیدا نشد یا اجازه ویرایش نداری.")
+                return
+            try:
+                await ensure_joined(self.client, source, progress, label="مبدأ")
+                _, reason = await ensure_can_post(
+                    self.client, dest, progress, auto_join=True
+                )
+            except ValueError as exc:
+                await progress.fail(str(exc))
+                return
+            route["destination"] = dest
+            await progress.step("ذخیره و ری‌لود")
+            result = await runtime.patch_module_config(
+                "channel_forward",
+                {"routes": routes},
             )
+            await progress.success(f"مقصد عوض شد ({reason}).\n{result}")
             return
 
         if action == "mode" and len(parts) >= 4:
@@ -331,35 +437,38 @@ class AutoReplyModule(BaseModule):
             if mode not in {"copy", "forward"}:
                 await progress.fail("mode باید `copy` یا `forward` باشد.")
                 return
-            for route in routes:
-                if str(route.get("source")) == source or display_ref(
-                    route.get("source")
-                ) == display_ref(source):
-                    route["forward_mode"] = mode
-                    result = await runtime.patch_module_config(
-                        "channel_forward",
-                        {"routes": routes},
-                    )
-                    await progress.success(result)
-                    return
-            await progress.fail(f"مبدأ `{display_ref(source)}` پیدا نشد.")
+            route = _find_route(source, need_edit=True)
+            if route is None:
+                await progress.fail("مسیر پیدا نشد یا اجازه ویرایش نداری.")
+                return
+            route["forward_mode"] = mode
+            result = await runtime.patch_module_config(
+                "channel_forward",
+                {"routes": routes},
+            )
+            await progress.success(result)
             return
 
         if action == "filter":
-            await self._handle_forward_filter(parts, routes, runtime, progress)
+            await self._handle_forward_filter(
+                parts, routes, runtime, progress, actor_id=actor_id
+            )
             return
 
         if action == "schedule":
-            await self._handle_forward_schedule(parts, routes, runtime, progress)
+            await self._handle_forward_schedule(
+                parts, routes, runtime, progress, actor_id=actor_id
+            )
             return
 
         await progress.fail(
             "فرمت‌ها:\n"
-            "`/forward status`\n"
+            "`/forward status` | `/forward mine`\n"
             "`/forward add <source> <dest>`\n"
+            "`/forward visibility <source> public|private`\n"
+            "`/forward claim <source>`\n"
             "`/forward schedule <source> ...`\n"
-            "`/forward filter <source> ...`\n"
-            "`/stats`"
+            "`/forward filter <source> ...`"
         )
 
     async def _handle_forward_schedule(
@@ -368,7 +477,9 @@ class AutoReplyModule(BaseModule):
         routes: list,
         runtime,
         progress: ProgressMessenger,
+        actor_id: int,
     ) -> None:
+        from modules.channel_forward.access import can_edit_route, can_view_route
         from modules.channel_forward.module import display_ref
         from modules.channel_forward.schedule import (
             ScheduleConfig,
@@ -395,8 +506,11 @@ class AutoReplyModule(BaseModule):
             ) == display_ref(source):
                 route = item
                 break
-        if route is None:
+        if route is None or not can_view_route(route, actor_id):
             await progress.fail(f"مبدأ `{display_ref(source)}` پیدا نشد.")
+            return
+        if len(parts) > 3 and not can_edit_route(route, actor_id):
+            await progress.fail("اجازه ویرایش این مسیر را نداری.")
             return
 
         sched = ScheduleConfig.from_dict(route.get("schedule"))
@@ -483,7 +597,9 @@ class AutoReplyModule(BaseModule):
         routes: list,
         runtime,
         progress: ProgressMessenger,
+        actor_id: int,
     ) -> None:
+        from modules.channel_forward.access import can_edit_route, can_view_route
         from modules.channel_forward.filters import TextFilterConfig, unescape_admin_text
         from modules.channel_forward.module import display_ref
 
@@ -505,8 +621,11 @@ class AutoReplyModule(BaseModule):
             ) == display_ref(source):
                 route = item
                 break
-        if route is None:
+        if route is None or not can_view_route(route, actor_id):
             await progress.fail(f"مبدأ `{display_ref(source)}` پیدا نشد.")
+            return
+        if len(parts) > 3 and not can_edit_route(route, actor_id):
+            await progress.fail("اجازه ویرایش این مسیر را نداری.")
             return
 
         filt = TextFilterConfig.from_dict(route.get("filter"))
@@ -699,6 +818,37 @@ class AutoReplyModule(BaseModule):
             return True
         return user_id in self._admins
 
+    @staticmethod
+    def _normalize_secret(value: str) -> str:
+        text = value or ""
+        for ch in ("\u200c", "\u200e", "\u200f", "\ufeff", "\xa0"):
+            text = text.replace(ch, "")
+        return text.strip()
+
+    def _password_matches(self, text: str) -> bool:
+        if not self.admin_password:
+            return False
+        got = self._normalize_secret(text)
+        expected = self._normalize_secret(self.admin_password)
+        if not got or not expected:
+            return False
+        return got == expected
+
+    async def _grant_admin(self, event: events.NewMessage.Event, peer_key: int) -> None:
+        self._admins.add(peer_key)
+        self._save_admins()
+        welcome = self.admin_welcome
+        if self.send_help_on_login:
+            welcome = f"{self.admin_welcome}\n\n{self._build_help_text()}"
+        # Send first, then delete password message (respond-after-delete is unreliable)
+        await self.client.send_message(event.chat_id, welcome)
+        if self.delete_password_message and not event.out:
+            try:
+                await event.delete()
+            except Exception:
+                logger.debug("Could not delete password message", exc_info=True)
+        logger.info("admin unlocked user_id=%s", peer_key)
+
     async def _on_message(self, event: events.NewMessage.Event) -> None:
         try:
             await self._handle(event)
@@ -775,28 +925,37 @@ class AutoReplyModule(BaseModule):
         if peer_key is None:
             return
 
+        # Keep in-memory set synced with disk (multi-instance safety)
+        self._admins = self._load_admins()
         cmd = self._normalize_command(text)
 
-        # Unlock with password (exact match, case-sensitive)
-        if self.require_admin and self.admin_password and text == self.admin_password:
-            self._admins.add(peer_key)
-            self._save_admins()
-            if self.delete_password_message:
-                try:
-                    await event.delete()
-                except Exception:
-                    logger.debug("Could not delete password message", exc_info=True)
-            welcome = self.admin_welcome
-            if self.send_help_on_login:
-                welcome = f"{self.admin_welcome}\n\n{self._build_help_text()}"
-            await self._send(event, welcome)
-            logger.info("admin unlocked user_id=%s", peer_key)
+        # /login or /login <password>
+        if cmd == "/login":
+            parts = text.split(maxsplit=1)
+            if len(parts) == 2 and self._password_matches(parts[1]):
+                await self._grant_admin(event, peer_key)
+                return
+            if self._is_admin(peer_key):
+                await self._send(event, "قبلاً وارد شده‌ای. /help را بفرست.")
+                return
+            await self._send(
+                event,
+                "برای ورود، فقط کلمه رمز را بفرست\nیا این فرم را استفاده کن:\n`/login <رمز>`",
+            )
+            return
+
+        # Unlock with password
+        if self.require_admin and self._password_matches(text):
+            await self._grant_admin(event, peer_key)
             return
 
         # Help / command list — admin only
         if cmd in self.help_commands or text.strip().lower() in self.help_commands:
             if not self._is_admin(peer_key):
-                logger.info("help ignored for non-admin user_id=%s", peer_key)
+                await self._send(
+                    event,
+                    "ابتدا وارد شو: رمز را بفرست یا `/login`",
+                )
                 return
             await self._send(event, self._build_help_text())
             logger.info("help sent to user_id=%s", peer_key)
@@ -804,10 +963,26 @@ class AutoReplyModule(BaseModule):
 
         if cmd == "/stats":
             if not self._is_admin(peer_key):
+                await self._send(event, "نیاز به ورود مدیر دارد. `/login`")
                 return
             from app.stats import StatsStore
+            from modules.channel_forward.access import can_view_route
+            from modules.channel_forward.module import display_ref, migrate_routes
 
-            await self._send(event, StatsStore().summary(days=2))
+            visible: set[str] = set()
+            runtime = self._runtime()
+            if runtime is not None:
+                cfg = runtime.modules_config.get("channel_forward") or {}
+                if isinstance(cfg, dict):
+                    for route in migrate_routes(cfg):
+                        if can_view_route(route, peer_key):
+                            visible.add(display_ref(route.get("source")))
+                            visible.add(str(route.get("source")))
+
+            await self._send(
+                event,
+                StatsStore().summary(days=2, visible_route_keys=visible),
+            )
             return
 
         # Logout
@@ -817,12 +992,27 @@ class AutoReplyModule(BaseModule):
             if peer_key in self._admins:
                 self._admins.discard(peer_key)
                 self._save_admins()
-                await self._send(event, self.logout_message)
+                await self._send(
+                    event,
+                    self.logout_message
+                    if "login" in self.logout_message.lower()
+                    or "رمز" in self.logout_message
+                    else (
+                        f"{self.logout_message}\n"
+                        "برای ورود دوباره فقط رمز را بفرست یا: /login"
+                    ),
+                )
                 logger.info("admin logged out user_id=%s", peer_key)
+            else:
+                await self._send(event, "الان وارد نیستی. برای ورود: `/login`")
             return
 
         if not self._is_admin(peer_key):
-            logger.info("auto_reply ignore non-admin user_id=%s", peer_key)
+            logger.info(
+                "auto_reply ignore non-admin user_id=%s text_len=%s",
+                peer_key,
+                len(text),
+            )
             return
 
         # Module management commands
@@ -830,7 +1020,7 @@ class AutoReplyModule(BaseModule):
             progress = ProgressMessenger(event)
             await progress.start("⏳ صبر کنید…")
             try:
-                await self._handle_forward_command(text.split(), progress)
+                await self._handle_forward_command(text.split(), progress, peer_key)
             except Exception as exc:
                 logger.exception("forward command failed")
                 await progress.fail(str(exc))

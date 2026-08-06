@@ -1,6 +1,15 @@
-# Scheduled long-running job (~6h). Prefer a VPS for production listeners.
-# Secrets required: API_ID, API_HASH, ADMIN_PASSWORD, TELEGRAM_SESSION_B64
-# TELEGRAM_SESSION_B64 = base64 of local easy_seen.session after login.
+# Scheduled long-running job (~6h). Prefer a VPS for always-on listeners.
+#
+# Required repo Secrets:
+#   API_ID
+#   API_HASH
+#   ADMIN_PASSWORD
+#   TELEGRAM_SESSION_B64   # base64 of easy_seen.session  →  python scripts/export_session_b64.py
+#
+# Notes:
+# - GHA is not a 24/7 server: each run starts, listens, then stops.
+# - Free private-repo minutes are limited (6h × 4/day burns quota fast).
+# - Session is restored from Secret, then kept warm via Actions cache.
 
 name: run-every-6h
 
@@ -8,6 +17,11 @@ on:
   schedule:
     - cron: "0 */6 * * *"
   workflow_dispatch:
+    inputs:
+      max_runtime_seconds:
+        description: "Seconds to run before clean exit (default ~5h50m)"
+        required: false
+        default: "21000"
 
 jobs:
   run-bot:
@@ -23,24 +37,41 @@ jobs:
       - name: Install deps
         run: pip install -r requirements.txt
 
-      - name: Restore session file
+      - name: Restore data + session cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            data
+            easy_seen.session
+          key: runtime-state-${{ github.run_id }}
+          restore-keys: |
+            runtime-state-
+
+      - name: Restore session from Secret if missing
         env:
           TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
         run: |
           python - <<'PY'
-          import base64, os, pathlib
-          raw = os.environ["TELEGRAM_SESSION_B64"]
-          pathlib.Path("easy_seen.session").write_bytes(base64.b64decode(raw))
-          pathlib.Path("data").mkdir(exist_ok=True)
-          PY
+          import base64, os, pathlib, sys
 
-      - name: Restore admins cache
-        uses: actions/cache@v4
-        with:
-          path: data/admins.json
-          key: admins-${{ github.run_id }}
-          restore-keys: |
-            admins-
+          session = pathlib.Path("easy_seen.session")
+          pathlib.Path("data").mkdir(exist_ok=True)
+          if not (pathlib.Path("data") / "admins.json").exists():
+              (pathlib.Path("data") / "admins.json").write_text(
+                  '{"admin_ids":[]}\n', encoding="utf-8"
+              )
+
+          if session.exists() and session.stat().st_size > 0:
+              print("Using cached session file")
+              sys.exit(0)
+
+          raw = (os.environ.get("TELEGRAM_SESSION_B64") or "").strip()
+          if not raw:
+              print("::error::TELEGRAM_SESSION_B64 secret is missing and no cached session")
+              sys.exit(1)
+          session.write_bytes(base64.b64decode(raw))
+          print(f"Session restored from secret ({session.stat().st_size} bytes)")
+          PY
 
       - name: Run app
         env:
@@ -49,9 +80,10 @@ jobs:
           ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
           SESSION_NAME: easy_seen
           LOG_LEVEL: INFO
+          MAX_RUNTIME_SECONDS: ${{ inputs.max_runtime_seconds || '21000' }}
         run: python main.py
 
-      - name: Keep admins cache warm
+      - name: Ensure data dir for cache
         if: always()
         run: |
           mkdir -p data

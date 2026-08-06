@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
 
 from app.client import build_client
@@ -13,6 +14,14 @@ from app.runtime import ModuleRuntime
 from app.singleton import ProcessLock
 
 logger = logging.getLogger(__name__)
+
+
+def _max_runtime_seconds() -> int:
+    raw = os.environ.get("MAX_RUNTIME_SECONDS", "0").strip()
+    try:
+        return max(0, int(raw))
+    except ValueError:
+        return 0
 
 
 async def run() -> None:
@@ -27,6 +36,7 @@ async def run() -> None:
     # Shared with modules (admin commands)
     setattr(client, "app_runtime", runtime)
 
+    stop_task: asyncio.Task[None] | None = None
     try:
         await client.connect()
         if not await client.is_user_authorized():
@@ -45,9 +55,33 @@ async def run() -> None:
 
         modules = await load_modules(client, config.modules)
         runtime.bind_loaded(modules)
+
+        max_runtime = _max_runtime_seconds()
+        if max_runtime > 0:
+            logger.info(
+                "Will auto-stop after %s seconds (MAX_RUNTIME_SECONDS)",
+                max_runtime,
+            )
+
+            async def _stop_later() -> None:
+                try:
+                    await asyncio.sleep(max_runtime)
+                    logger.info("MAX_RUNTIME_SECONDS reached; disconnecting cleanly")
+                    await client.disconnect()
+                except asyncio.CancelledError:
+                    raise
+
+            stop_task = asyncio.create_task(_stop_later())
+
         logger.info("App running. Press Ctrl+C to stop.")
         await client.run_until_disconnected()
     finally:
+        if stop_task and not stop_task.done():
+            stop_task.cancel()
+            try:
+                await stop_task
+            except asyncio.CancelledError:
+                pass
         await stop_modules(list(runtime.loaded.values()))
         if client.is_connected():
             await client.disconnect()

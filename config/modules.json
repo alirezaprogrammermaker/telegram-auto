@@ -13,7 +13,7 @@
       "admin_password": "",
       "admin_welcome": "دسترسی مدیر فعال شد.",
       "logout_command": "/logout",
-      "logout_message": "دسترسی مدیر غیرفعال شد.",
+      "logout_message": "دسترسی مدیر غیرفعال شد.\nبرای ورود دوباره فقط رمز را بفرست یا: /login",
       "delete_password_message": true,
       "help_commands": ["/help", "/commands", "دستورات", "help"],
       "send_help_on_login": true,
@@ -44,7 +44,9 @@
             "timezone": "Asia/Tehran",
             "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
             "windows": []
-          }
+          },
+          "owner_id": null,
+          "visibility": "public"
         }
       ],
       "delay_seconds": 1.5,

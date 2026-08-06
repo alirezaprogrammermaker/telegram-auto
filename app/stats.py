@@ -65,7 +65,12 @@ class StatsStore:
                 self._data["days"].pop(old, None)
             save_json(self.path, self._data)
 
-    def summary(self, *, days: int = 1) -> str:
+    def summary(
+        self,
+        *,
+        days: int = 1,
+        visible_route_keys: set[str] | None = None,
+    ) -> str:
         with _lock:
             self._data = load_json(self.path, {"days": {}})
             all_days = sorted(self._data.get("days", {}), reverse=True)[: max(1, days)]
@@ -81,6 +86,12 @@ class StatsStore:
                 lines.append(f"• صف زمان‌بندی: {b.get('queued', 0)}")
                 lines.append(f"• انتشار از صف: {b.get('published_scheduled', 0)}")
                 routes = b.get("routes") or {}
+                if visible_route_keys is not None:
+                    routes = {
+                        name: vals
+                        for name, vals in routes.items()
+                        if name in visible_route_keys
+                    }
                 if routes:
                     lines.append("  مسیرها:")
                     for name, vals in list(routes.items())[:10]:
