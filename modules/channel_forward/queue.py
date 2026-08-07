@@ -92,3 +92,25 @@ class PublishQueue:
 
     def pending_count(self) -> int:
         return len(self.list_pending())
+
+    def list_all(self, *, status: str | None = None) -> list[dict[str, Any]]:
+        with _lock:
+            self._data = load_json(self.path, {"items": []})
+            items = self._data.get("items") or []
+            if status:
+                return [i for i in items if i.get("status") == status]
+            return list(items)
+
+    def clear(self, *, status: str | None = "pending") -> int:
+        with _lock:
+            self._data = load_json(self.path, {"items": []})
+            items = self._data.get("items") or []
+            if status is None:
+                count = len(items)
+                self._data["items"] = []
+            else:
+                kept = [i for i in items if i.get("status") != status]
+                count = len(items) - len(kept)
+                self._data["items"] = kept
+            self._save()
+            return count

@@ -51,6 +51,14 @@ jobs:
           python3 -m pip install --upgrade --quiet pip
           python3 -m pip install --quiet -r requirements.txt
 
+      - name: Restore persisted data
+        uses: actions/cache@v4
+        with:
+          path: data
+          key: data-${{ github.repository }}-v1
+          restore-keys: |
+            data-${{ github.repository }}-
+
       - name: Prepare data + session
         env:
           TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
@@ -58,8 +66,10 @@ jobs:
           python3 - <<'PY'
           import base64, os, pathlib, sys
 
-          pathlib.Path("data").mkdir(exist_ok=True)
-          admins = pathlib.Path("data") / "admins.json"
+          data = pathlib.Path("data")
+          data.mkdir(exist_ok=True)
+
+          admins = data / "admins.json"
           if not admins.exists():
               admins.write_text('{"admin_ids":[]}\n', encoding="utf-8")
 

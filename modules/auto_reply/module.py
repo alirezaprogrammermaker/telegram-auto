@@ -130,6 +130,20 @@ class AutoReplyModule(BaseModule):
             ("/forward filter <source> hashtags|هشتگ on|off", "حذف هشتگ‌ها"),
             ("/forward filter <source> ids|آیدی on|off", "حذف آیدی عددی"),
             ("/forward filter <source> prefix|suffix <text|off>", "متن اول/آخر (\\n برای خط جدید)"),
+            ("/forward queue [clear]", "وضعیت یا پاک کردن صف pending"),
+            ("/forward pause|resume <source>", "توقف/ادامه موقت مسیر"),
+            ("/forward dest add|remove <source> <dest>", "چند مقصد برای یک مبدأ"),
+            ("/forward media <source> on|allow photo,video", "فیلتر نوع رسانه"),
+            ("/forward dedup <source> on|off [hours]", "حذف پست تکراری"),
+            ("/forward allow <source> on|add|clear", "فقط اگر کلمه خاص بود"),
+            ("/forward regex <source> on|set <pattern>", "فیلتر regex"),
+            ("/forward delivery <source> pin|button|sync ...", "پین، دکمه، همگام ادیت/حذف"),
+            ("/forward dryrun [on|off]", "حالت تست بدون ارسال واقعی"),
+            ("/forward link <source> set <from> <to>", "جایگزینی لینک در کپشن"),
+            ("/forward import @a,@b <dest>", "افزودن چند مبدأ یکجا"),
+            ("/config reply <text>", "تغییر متن پاسخ خودکار"),
+            ("/config whitelist add|remove <id>", "لیست سفید پیام"),
+            ("/digest", "خلاصه روزانه فوری"),
             (self.logout_command, "خروج از حالت مدیر"),
             ("/login", "راهنمای ورود دوباره"),
             ("/login <رمز>", "ورود مدیر با رمز"),
@@ -183,6 +197,12 @@ class AutoReplyModule(BaseModule):
             # Handled with ProgressMessenger by caller
             return "__FORWARD_PROGRESS__"
 
+        if cmd == "/config":
+            return "__CONFIG_PROGRESS__"
+
+        if cmd == "/digest":
+            return "__DIGEST_PROGRESS__"
+
         return None
 
     async def _handle_forward_command(
@@ -208,6 +228,8 @@ class AutoReplyModule(BaseModule):
             ensure_joined,
             migrate_routes,
         )
+
+        from modules.channel_forward.route_config import default_route_dict
 
         cfg = runtime.modules_config.setdefault("channel_forward", {})
         if not isinstance(cfg, dict):
@@ -262,9 +284,13 @@ class AutoReplyModule(BaseModule):
             do_check = len(parts) > 1 and parts[1].lower() in {"status", "check"}
             for i, route in enumerate(shown, start=1):
                 src = display_ref(route["source"])
-                dest = display_ref(route["destination"])
+                from modules.channel_forward.route_config import route_destinations
+
+                dests = [display_ref(d) for d in route_destinations(route)]
+                dest_label = " → ".join(dests) if dests else "(no dest)"
+                paused = " ⏸" if route.get("paused") else ""
                 await progress.step(
-                    f"{i}) `{src}` → `{dest}` [{visibility_label(route)}]"
+                    f"{i}) `{src}` → `{dest_label}` [{visibility_label(route)}]{paused}"
                 )
                 if do_check:
                     try:
@@ -316,34 +342,7 @@ class AutoReplyModule(BaseModule):
                 return
 
             await progress.step("ذخیره مسیر خصوصی برای تو")
-            routes.append(
-                {
-                    "source": source,
-                    "destination": dest,
-                    "enabled": True,
-                    "forward_mode": None,
-                    "owner_id": actor_id,
-                    "visibility": "private",
-                    "filter": {
-                        "enabled": False,
-                        "remove_links": False,
-                        "remove_mentions": False,
-                        "remove_hashtags": False,
-                        "remove_ids": False,
-                        "prefix": "",
-                        "suffix": "",
-                        "collapse_whitespace": True,
-                        "block_enabled": False,
-                        "block_words": [],
-                    },
-                    "schedule": {
-                        "enabled": False,
-                        "timezone": "Asia/Tehran",
-                        "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
-                        "windows": [],
-                    },
-                }
-            )
+            routes.append(default_route_dict(source, dest, owner_id=actor_id, visibility="private"))
             result = await runtime.patch_module_config(
                 "channel_forward",
                 {"routes": routes, "enabled": True},
@@ -484,6 +483,21 @@ class AutoReplyModule(BaseModule):
             )
             return
 
+        from modules.channel_forward.admin_commands import handle_forward_extended
+
+        handled = await handle_forward_extended(
+            action,
+            parts,
+            routes=routes,
+            runtime=runtime,
+            progress=progress,
+            actor_id=actor_id,
+            find_route=lambda src, need_edit=False: _find_route(src, need_edit=need_edit),
+            can_edit=lambda r: can_edit_route(r, actor_id),
+        )
+        if handled:
+            return
+
         await progress.fail(
             "فرمت‌ها:\n"
             "`/forward status` | `/forward mine`\n"
@@ -493,6 +507,55 @@ class AutoReplyModule(BaseModule):
             "`/forward schedule <source> ...`\n"
             "`/forward filter <source> ...`"
         )
+
+    async def _handle_config_command(
+        self,
+        parts: list[str],
+        progress: ProgressMessenger,
+        *,
+        runtime,
+    ) -> None:
+        if runtime is None:
+            await progress.fail("runtime unavailable")
+            return
+        if len(parts) < 2:
+            await progress.fail("`/config reply <text>` | `/config whitelist add <id>`")
+            return
+        key = parts[1].lower()
+        cfg = runtime.modules_config.setdefault("auto_reply", {})
+
+        if key == "reply" and len(parts) >= 3:
+            text = " ".join(parts[2:]).strip()
+            cfg["reply_text"] = text
+            self.reply_text = text
+            result = await runtime.patch_module_config("auto_reply", {"reply_text": text}, reload=False)
+            await progress.success(f"reply_text updated.\n{result}")
+            return
+
+        if key == "whitelist" and len(parts) >= 4:
+            sub = parts[2].lower()
+            try:
+                uid = int(parts[3].strip())
+            except ValueError:
+                await progress.fail("id عددی بده")
+                return
+            wl = set(int(x) for x in (cfg.get("whitelist") or []) if str(x).lstrip("-").isdigit())
+            if sub == "add":
+                wl.add(uid)
+            elif sub == "remove":
+                wl.discard(uid)
+            else:
+                await progress.fail("add|remove")
+                return
+            cfg["whitelist"] = sorted(wl)
+            self.whitelist = wl
+            result = await runtime.patch_module_config(
+                "auto_reply", {"whitelist": cfg["whitelist"]}, reload=False
+            )
+            await progress.success(f"whitelist={cfg['whitelist']}\n{result}")
+            return
+
+        await progress.fail("`/config reply ...` | `/config whitelist add|remove <id>`")
 
     async def _handle_forward_schedule(
         self,
@@ -1053,6 +1116,26 @@ class AutoReplyModule(BaseModule):
             except Exception as exc:
                 logger.exception("forward command failed")
                 await progress.fail(str(exc))
+            return
+
+        if cmd == "/config":
+            progress = ProgressMessenger(event)
+            await progress.start("⏳ تنظیمات…")
+            try:
+                await self._handle_config_command(text.split(), progress, runtime=self._runtime())
+            except Exception as exc:
+                logger.exception("config command failed")
+                await progress.fail(str(exc))
+            return
+
+        if cmd == "/digest":
+            from app.stats import StatsStore
+            from modules.channel_forward.queue import PublishQueue
+
+            stats = StatsStore()
+            pending = PublishQueue().pending_count()
+            body = f"📰 Digest\n────────────\n{stats.summary(days=1)}\n────────────\nصف pending: {pending}"
+            await self._send(event, body)
             return
 
         if cmd in {"/modules", "/module"}:

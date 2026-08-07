@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 MODULE_REGISTRY: dict[str, str] = {
     "auto_reply": "modules.auto_reply.module:AutoReplyModule",
     "channel_forward": "modules.channel_forward.module:ChannelForwardModule",
+    "digest": "modules.digest.module:DigestModule",
 }
 
 

@@ -85,6 +85,11 @@ class StatsStore:
                 lines.append(f"• بلاک‌شده: {b.get('blocked', 0)}")
                 lines.append(f"• صف زمان‌بندی: {b.get('queued', 0)}")
                 lines.append(f"• انتشار از صف: {b.get('published_scheduled', 0)}")
+                lines.append(f"• فیلتر/رد محتوا: {b.get('filtered_skip', 0)}")
+                lines.append(f"• رد رسانه: {b.get('media_skipped', 0)}")
+                lines.append(f"• dedup: {b.get('dedup_skipped', 0)}")
+                lines.append(f"• dry-run: {b.get('dry_run', 0)}")
+                lines.append(f"• خطا: {b.get('failed', 0)}")
                 routes = b.get("routes") or {}
                 if visible_route_keys is not None:
                     routes = {

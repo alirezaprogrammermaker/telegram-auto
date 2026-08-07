@@ -33,6 +33,12 @@ class TextFilterConfig:
     collapse_whitespace: bool = True
     block_enabled: bool = False
     block_words: list[str] = field(default_factory=list)
+    allow_enabled: bool = False
+    allow_words: list[str] = field(default_factory=list)
+    regex_enabled: bool = False
+    regex_pattern: str = ""
+    regex_must_match: bool = True
+    link_replacements: dict[str, str] = field(default_factory=dict)
 
     def is_active(self) -> bool:
         if not self.enabled:
@@ -44,6 +50,7 @@ class TextFilterConfig:
             or self.remove_ids
             or self.prefix.strip()
             or self.suffix.strip()
+            or self.link_replacements
         )
 
     def find_blocked_word(self, text: str | None) -> str | None:
@@ -59,6 +66,8 @@ class TextFilterConfig:
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
         data["block_words"] = list(self.block_words)
+        data["allow_words"] = list(self.allow_words)
+        data["link_replacements"] = dict(self.link_replacements)
         return data
 
     @classmethod
@@ -70,9 +79,9 @@ class TextFilterConfig:
         for key, value in data.items():
             if key not in known:
                 continue
-            if key in {"prefix", "suffix"}:
+            if key in {"prefix", "suffix", "regex_pattern"}:
                 cleaned[key] = str(value or "")
-            elif key == "block_words":
+            elif key in {"block_words", "allow_words"}:
                 words: list[str] = []
                 if isinstance(value, list):
                     for item in value:
@@ -80,8 +89,29 @@ class TextFilterConfig:
                         if text and text not in words:
                             words.append(text)
                 cleaned[key] = words
-            else:
+            elif key == "link_replacements":
+                repl: dict[str, str] = {}
+                if isinstance(value, dict):
+                    for k, v in value.items():
+                        ks = str(k).strip()
+                        if ks:
+                            repl[ks] = str(v or "")
+                cleaned[key] = repl
+            elif key in {
+                "enabled",
+                "remove_links",
+                "remove_mentions",
+                "remove_hashtags",
+                "remove_ids",
+                "collapse_whitespace",
+                "block_enabled",
+                "allow_enabled",
+                "regex_enabled",
+                "regex_must_match",
+            }:
                 cleaned[key] = bool(value)
+            else:
+                cleaned[key] = value
         return cls(**cleaned)
 
     def summary_lines(self) -> list[str]:
@@ -89,7 +119,8 @@ class TextFilterConfig:
             return f"{name}: {'ON' if on else 'OFF'}"
 
         words = ", ".join(self.block_words) if self.block_words else "(خالی)"
-        return [
+        allow = ", ".join(self.allow_words) if self.allow_words else "(خالی)"
+        lines = [
             flag("enabled", self.enabled),
             flag("remove_links (لینک)", self.remove_links),
             flag("remove_mentions (منشن)", self.remove_mentions),
@@ -98,9 +129,16 @@ class TextFilterConfig:
             flag("collapse_whitespace", self.collapse_whitespace),
             flag("block_enabled (بلاک‌لیست)", self.block_enabled),
             f"block_words: {words}",
+            flag("allow_enabled", self.allow_enabled),
+            f"allow_words: {allow}",
+            flag("regex_enabled", self.regex_enabled),
+            f"regex_pattern: {_preview(self.regex_pattern)}",
+            f"regex_must_match: {self.regex_must_match}",
+            f"link_replacements: {len(self.link_replacements)}",
             f"prefix: {_preview(self.prefix)}",
             f"suffix: {_preview(self.suffix)}",
         ]
+        return lines
 
 
 def _preview(text: str, limit: int = 40) -> str:
@@ -150,10 +188,14 @@ def apply_text_filter(
     entities: Iterable[Any] | None = None,
 ) -> str:
     body = text or ""
-    if not cfg.is_active():
+    if not cfg.enabled and not cfg.link_replacements:
         return body
 
     body = _strip_entities(body, entities, cfg)
+
+    for src, dst in (cfg.link_replacements or {}).items():
+        if src:
+            body = body.replace(src, dst)
 
     if cfg.remove_links:
         body = _LINK_RE.sub(" ", body)
@@ -178,3 +220,21 @@ def apply_text_filter(
     if cfg.suffix:
         parts.append(cfg.suffix.lstrip())
     return "\n".join(parts).strip()
+
+
+def matches_content_rules(text: str | None, cfg: TextFilterConfig) -> bool:
+    body = text or ""
+    if cfg.allow_enabled and cfg.allow_words:
+        hay = body.casefold()
+        if not any(w.casefold() in hay for w in cfg.allow_words if str(w).strip()):
+            return False
+    if cfg.regex_enabled and cfg.regex_pattern.strip():
+        try:
+            matched = re.search(cfg.regex_pattern, body, re.UNICODE) is not None
+        except re.error:
+            return True
+        if cfg.regex_must_match and not matched:
+            return False
+        if not cfg.regex_must_match and matched:
+            return False
+    return True
