@@ -1,7 +1,7 @@
 # Telegram listener on GitHub-hosted runners.
 #
 # Cycle: cron starts a run every 6h, the app exits cleanly after 5h55m,
-# leaving a ~5 minute gap before the next run.
+# leaving ~5 minutes offline before the next run.
 #
 # Secrets:
 #   API_ID, API_HASH, ADMIN_PASSWORD, TELEGRAM_SESSION_B64, ADMIN_IDS (optional)
