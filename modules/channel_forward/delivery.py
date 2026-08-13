@@ -7,7 +7,7 @@ import random
 from typing import Any, Callable, Awaitable
 
 from telethon import TelegramClient
-from telethon.errors import FloodWaitError
+from telethon.errors import FloodWaitError, MediaCaptionTooLongError, MessageTooLongError
 from telethon.tl.types import Message, KeyboardButtonUrl, ReplyInlineMarkup
 
 from app.stats import StatsStore
@@ -21,6 +21,19 @@ from modules.channel_forward.state import ForwardStateStore
 logger = logging.getLogger(__name__)
 
 AlertFn = Callable[[str], Awaitable[None]]
+
+# Telegram hard limits (UTF-16 code units ≈ chars for Persian/ASCII).
+MEDIA_CAPTION_LIMIT = 1024
+TEXT_MESSAGE_LIMIT = 4096
+
+
+def clip_telegram_text(text: str, limit: int) -> str:
+    """Trim text to Telegram length limits, keeping a short ellipsis marker."""
+    if not text or len(text) <= limit:
+        return text
+    if limit <= 1:
+        return text[:limit]
+    return text[: limit - 1].rstrip() + "…"
 
 
 class DeliveryEngine:
@@ -158,6 +171,7 @@ class DeliveryEngine:
                 buttons = _inline_buttons(delivery.button_text, delivery.button_url)
 
                 if len(messages) == 1 and not first.media:
+                    text = clip_telegram_text(text, TEXT_MESSAGE_LIMIT)
                     if text:
                         sent = await self.client.send_message(dest, text, buttons=buttons)
                     elif not use_filter:
@@ -165,12 +179,30 @@ class DeliveryEngine:
                     else:
                         sent = None
                 else:
-                    sent = await self.client.send_file(
-                        dest,
-                        file=messages if len(messages) > 1 else first,
-                        caption=text,
-                        buttons=buttons,
-                    )
+                    caption = clip_telegram_text(text, MEDIA_CAPTION_LIMIT)
+                    if caption != text:
+                        logger.warning(
+                            "Caption truncated route=%s %s→%s chars",
+                            route.route_key,
+                            len(text),
+                            len(caption),
+                        )
+                    try:
+                        sent = await self.client.send_file(
+                            dest,
+                            file=messages if len(messages) > 1 else first,
+                            caption=caption,
+                            buttons=buttons,
+                        )
+                    except MediaCaptionTooLongError:
+                        # Defensive retry (entity/UTF-16 edge cases).
+                        shorter = clip_telegram_text(caption, MEDIA_CAPTION_LIMIT - 64)
+                        sent = await self.client.send_file(
+                            dest,
+                            file=messages if len(messages) > 1 else first,
+                            caption=shorter,
+                            buttons=buttons,
+                        )
                 if sent is not None:
                     if isinstance(sent, list):
                         sent_ids = [m.id for m in sent if hasattr(m, "id")]
@@ -213,6 +245,16 @@ class DeliveryEngine:
 
         except FloodWaitError:
             raise
+        except (MediaCaptionTooLongError, MessageTooLongError) as exc:
+            logger.warning(
+                "Length limit hit ids=%s route=%s (%s) — falling back to forward",
+                ids,
+                route.route_key,
+                exc.__class__.__name__,
+            )
+            return await self._forward_fallback(
+                messages, route, from_queue=from_queue, reason=exc.__class__.__name__
+            )
         except Exception as exc:
             logger.exception(
                 "Batch deliver failed ids=%s route=%s",
@@ -220,26 +262,46 @@ class DeliveryEngine:
                 route.route_key,
             )
             await self._notify(f"⚠️ خطا در ارسال `{route.route_key}`: {exc.__class__.__name__}")
-            try:
-                for msg in messages:
-                    sent = await self.client.forward_messages(
-                        entity=dest,
-                        messages=msg,
-                        from_peer=msg.chat_id,
-                    )
-                    dst_id = sent.id if sent and hasattr(sent, "id") else None
-                    if dst_id:
-                        self.state.record_mapping(route.route_key, msg.id, dst_id)
-                    await self._sleep_delay()
-                self.stats.incr(
-                    "published_scheduled" if from_queue else "forwarded",
-                    route=route.route_key,
+            return await self._forward_fallback(
+                messages, route, from_queue=from_queue, reason=exc.__class__.__name__
+            )
+
+    async def _forward_fallback(
+        self,
+        messages: list[Message],
+        route: ResolvedRoute,
+        *,
+        from_queue: bool,
+        reason: str,
+    ) -> bool:
+        dest = route.dest_entity
+        try:
+            for msg in messages:
+                sent = await self.client.forward_messages(
+                    entity=dest,
+                    messages=msg,
+                    from_peer=msg.chat_id,
                 )
-                return True
-            except Exception as exc2:
-                await self._notify(f"❌ fallback هم شکست `{route.route_key}`: {exc2}")
-                self.stats.incr("failed", route=route.route_key)
-                return False
+                dst_id = sent.id if sent and hasattr(sent, "id") else None
+                if dst_id:
+                    self.state.record_mapping(route.route_key, msg.id, dst_id)
+                await self._sleep_delay()
+            self.state.set_last_seen(route.route_key, max(m.id for m in messages))
+            self.stats.incr(
+                "published_scheduled" if from_queue else "forwarded",
+                route=route.route_key,
+            )
+            logger.info(
+                "Fallback forward OK ids=%s route=%s reason=%s",
+                [m.id for m in messages],
+                route.route_key,
+                reason,
+            )
+            return True
+        except Exception as exc2:
+            await self._notify(f"❌ fallback هم شکست `{route.route_key}`: {exc2}")
+            self.stats.incr("failed", route=route.route_key)
+            return False
 
     async def _sleep_delay(self) -> None:
         if self.delay_seconds <= 0 and self.delay_jitter <= 0:

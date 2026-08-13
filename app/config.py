@@ -12,6 +12,8 @@ from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parent.parent
 MODULES_CONFIG_PATH = ROOT / "config" / "modules.json"
+# Survives GHA restarts via the data/ cache; admin edits write here too.
+RUNTIME_MODULES_PATH = ROOT / "data" / "modules.runtime.json"
 
 logger = logging.getLogger(__name__)
 
@@ -63,20 +65,33 @@ def load_app_config() -> AppConfig:
 
 
 def _load_modules_config() -> dict[str, dict[str, Any]]:
-    if not MODULES_CONFIG_PATH.exists():
-        logger.warning("Module config missing at %s — no modules will load", MODULES_CONFIG_PATH)
-        return {}
+    # Prefer runtime overlay (persisted under data/) so routes added via chat
+    # survive GitHub Actions job restarts. Fall back to repo config.
+    for path in (RUNTIME_MODULES_PATH, MODULES_CONFIG_PATH):
+        loaded = _read_modules_file(path)
+        if loaded is not None:
+            if path == RUNTIME_MODULES_PATH:
+                logger.info("Loaded module config from runtime overlay %s", path)
+            return loaded
+
+    logger.warning("Module config missing — no modules will load")
+    return {}
+
+
+def _read_modules_file(path: Path) -> dict[str, dict[str, Any]] | None:
+    if not path.exists():
+        return None
 
     try:
-        data = json.loads(MODULES_CONFIG_PATH.read_text(encoding="utf-8"))
+        data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        logger.error("Failed to read %s: %s", MODULES_CONFIG_PATH, exc)
-        return {}
+        logger.error("Failed to read %s: %s", path, exc)
+        return None
 
     modules = data.get("modules")
     if not isinstance(modules, dict):
-        logger.error("Invalid modules.json: 'modules' must be an object")
-        return {}
+        logger.error("Invalid modules file %s: 'modules' must be an object", path)
+        return None
 
     cleaned: dict[str, dict[str, Any]] = {}
     for name, cfg in modules.items():
