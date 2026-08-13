@@ -15,7 +15,12 @@
       "logout_command": "/logout",
       "logout_message": "دسترسی مدیر غیرفعال شد.\nبرای ورود دوباره فقط رمز را بفرست یا: /login",
       "delete_password_message": true,
-      "help_commands": ["/help", "/commands", "دستورات", "help"],
+      "help_commands": [
+        "/help",
+        "/commands",
+        "دستورات",
+        "help"
+      ],
       "send_help_on_login": true,
       "admins_file": "data/admins.json"
     },
@@ -28,7 +33,7 @@
       "delay_jitter_seconds": 0.5,
       "forward_mode": "copy",
       "skip_silent": false,
-      "album_wait_seconds": 1.2,
+      "album_wait_seconds": 2.5,
       "alerts": {
         "enabled": true,
         "admin_ids": []
@@ -42,7 +47,9 @@
         {
           "source": "@channe_l_1",
           "destination": "@channe_l_2",
-          "destinations": ["@channe_l_2"],
+          "destinations": [
+            "@channe_l_2"
+          ],
           "enabled": true,
           "paused": false,
           "forward_mode": "copy",
@@ -72,7 +79,15 @@
           "schedule": {
             "enabled": false,
             "timezone": "Asia/Tehran",
-            "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+            "days": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
             "windows": []
           },
           "dedup": {
@@ -95,7 +110,9 @@
         {
           "source": "@tabzlive",
           "destination": "@channe_l_2",
-          "destinations": ["@channe_l_2"],
+          "destinations": [
+            "@channe_l_2"
+          ],
           "enabled": true,
           "paused": false,
           "forward_mode": "copy",
@@ -125,7 +142,15 @@
           "schedule": {
             "enabled": false,
             "timezone": "Asia/Tehran",
-            "days": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"],
+            "days": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
             "windows": []
           },
           "dedup": {
@@ -152,6 +177,64 @@
       "hour": "23:00",
       "timezone": "Asia/Tehran",
       "admin_ids": []
+    },
+    "promo_spread": {
+      "enabled": true,
+      "dry_run": true,
+      "paused": false,
+      "mode": "forward",
+      "routes": [
+        {
+          "source": "@factready",
+          "groups": [
+            "https://t.me/+18urJPwXE8lmN2Q0"
+          ],
+          "enabled": true,
+          "paused": false,
+          "mode": "forward"
+        }
+      ],
+      "album_wait_seconds": 2.5,
+      "safety": {
+        "timezone": "Asia/Tehran",
+        "active_days": [
+          "sat",
+          "sun",
+          "mon",
+          "tue",
+          "wed",
+          "thu",
+          "fri"
+        ],
+        "active_windows": [
+          {
+            "start": "09:30",
+            "end": "13:00"
+          },
+          {
+            "start": "16:00",
+            "end": "22:00"
+          }
+        ],
+        "delay_min_seconds": 70,
+        "delay_max_seconds": 190,
+        "delay_bias": 0.62,
+        "per_group_cooldown_minutes": 50,
+        "hourly_budget": 5,
+        "daily_budget": 28,
+        "typing_min_seconds": 1.8,
+        "typing_max_seconds": 5.0,
+        "read_before_send": true,
+        "read_delay_min": 4,
+        "read_delay_max": 14,
+        "shuffle_targets": true,
+        "flood_strikes_to_pause": 2,
+        "peer_flood_cooldown_hours": 24,
+        "circuit_breaker_hours": 8,
+        "require_member": true
+      },
+      "source": null,
+      "groups": []
     }
   }
 }

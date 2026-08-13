@@ -144,6 +144,12 @@ class AutoReplyModule(BaseModule):
             ("/config reply <text>", "تغییر متن پاسخ خودکار"),
             ("/config whitelist add|remove <id>", "لیست سفید پیام"),
             ("/digest", "خلاصه روزانه فوری"),
+            ("/promo status|help", "وضعیت پخش تبلیغات (چند مسیر)"),
+            ("/promo add @channel @g1,@g2", "مسیر کانال→گروه‌ها"),
+            ("/promo remove @channel", "حذف یک مسیر"),
+            ("/promo group add|remove @channel @group", "گروه یک مسیر"),
+            ("/promo dryrun|pause|resume|queue", "ایمنی و صف پخش"),
+            ("/promo safety delay|budget|windows", "تنظیم فاصله/سقف/بازه"),
             (self.logout_command, "خروج از حالت مدیر"),
             ("/login", "راهنمای ورود دوباره"),
             ("/login <رمز>", "ورود مدیر با رمز"),
@@ -202,6 +208,9 @@ class AutoReplyModule(BaseModule):
 
         if cmd == "/digest":
             return "__DIGEST_PROGRESS__"
+
+        if cmd == "/promo":
+            return "__PROMO_PROGRESS__"
 
         return None
 
@@ -506,6 +515,33 @@ class AutoReplyModule(BaseModule):
             "`/forward claim <source>`\n"
             "`/forward schedule <source> ...`\n"
             "`/forward filter <source> ...`"
+        )
+
+    async def _handle_promo_command(
+        self,
+        parts: list[str],
+        progress: ProgressMessenger,
+    ) -> None:
+        runtime = self._runtime()
+        if runtime is None:
+            await progress.fail("runtime unavailable")
+            return
+        from modules.promo_spread.admin_commands import handle_promo_command
+        from modules.promo_spread.queue import PromoQueue
+        from modules.promo_spread.safety import SafetyConfig, SafetyGuard
+
+        cfg = runtime.modules_config.setdefault("promo_spread", {})
+        if not isinstance(cfg, dict):
+            cfg = {}
+            runtime.modules_config["promo_spread"] = cfg
+        guard = SafetyGuard(SafetyConfig.from_dict(cfg.get("safety")))
+        await handle_promo_command(
+            parts,
+            cfg=cfg,
+            runtime=runtime,
+            progress=progress,
+            safety_summary=guard.summary_lines(),
+            queue_pending=PromoQueue().pending_count(),
         )
 
     async def _handle_config_command(
@@ -1136,6 +1172,16 @@ class AutoReplyModule(BaseModule):
             pending = PublishQueue().pending_count()
             body = f"📰 Digest\n────────────\n{stats.summary(days=1)}\n────────────\nصف pending: {pending}"
             await self._send(event, body)
+            return
+
+        if cmd == "/promo":
+            progress = ProgressMessenger(event)
+            await progress.start("⏳ promo…")
+            try:
+                await self._handle_promo_command(text.split(), progress)
+            except Exception as exc:
+                logger.exception("promo command failed")
+                await progress.fail(str(exc))
             return
 
         if cmd in {"/modules", "/module"}:

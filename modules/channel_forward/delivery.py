@@ -151,7 +151,12 @@ class DeliveryEngine:
             sent_ids: list[int] = []
             if use_copy:
                 first = messages[0]
-                raw_text = first.message or ""
+                # Caption can sit on any album item, not always the first.
+                caption_src = next(
+                    (m for m in messages if (m.message or "").strip()),
+                    first,
+                )
+                raw_text = caption_src.message or ""
                 has_media = bool(first.media) or len(messages) > 1
                 if has_media and (delivery.media_prefix or delivery.media_suffix):
                     parts: list[str] = []
@@ -164,7 +169,7 @@ class DeliveryEngine:
                     raw_text = "\n".join(parts).strip()
 
                 text = (
-                    apply_text_filter(raw_text, text_filter, first.entities)
+                    apply_text_filter(raw_text, text_filter, caption_src.entities)
                     if use_filter
                     else raw_text
                 )

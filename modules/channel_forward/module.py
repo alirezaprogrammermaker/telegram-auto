@@ -54,7 +54,9 @@ class ChannelForwardModule(BaseModule):
         if self.default_mode not in {"forward", "copy"}:
             self.default_mode = "copy"
         self.skip_silent = bool(config.get("skip_silent", False))
-        self.album_wait = max(0.2, float(config.get("album_wait_seconds") or 1.2))
+        # Cross-DC / GHA latency can delay later album parts; 1.2s was too short
+        # and caused single-photo publishes. Reconcile from history on flush too.
+        self.album_wait = max(0.5, float(config.get("album_wait_seconds") or 2.5))
         self.catch_up_enabled = bool(config.get("catch_up_enabled", True))
         self.catch_up_limit = max(1, int(config.get("catch_up_limit") or 50))
         self.dry_run = bool(config.get("dry_run", False))
@@ -315,7 +317,9 @@ class ChannelForwardModule(BaseModule):
         grouped_id = message.grouped_id
         if grouped_id:
             key = (chat_id, int(grouped_id))
-            self._album_buffers[key].append(message)
+            buf = self._album_buffers[key]
+            if not any(m.id == message.id for m in buf):
+                buf.append(message)
             prev = self._album_tasks.get(key)
             if prev and not prev.done():
                 prev.cancel()
@@ -323,6 +327,44 @@ class ChannelForwardModule(BaseModule):
             return
 
         await self._deliver_to_routes([message], routes)
+
+    async def _complete_album(
+        self,
+        chat_id: int,
+        grouped_id: int,
+        messages: list[Message],
+    ) -> list[Message]:
+        """Fill missing album parts from history (timer may fire before all arrive)."""
+        by_id = {m.id: m for m in messages if getattr(m, "id", None)}
+        if not by_id:
+            return []
+        lo = min(by_id)
+        try:
+            # Telegram albums are contiguous and at most 10 items.
+            fetched = await self.client.get_messages(chat_id, min_id=lo - 1, limit=10)
+            for m in fetched:
+                if (
+                    isinstance(m, Message)
+                    and getattr(m, "grouped_id", None) == grouped_id
+                    and m.id
+                ):
+                    by_id[m.id] = m
+        except Exception:
+            logger.exception(
+                "album reconcile failed chat=%s grouped=%s",
+                chat_id,
+                grouped_id,
+            )
+        completed = sorted(by_id.values(), key=lambda m: m.id)
+        if len(completed) != len(messages):
+            logger.info(
+                "Album reconciled chat=%s grouped=%s %s→%s msg(s)",
+                chat_id,
+                grouped_id,
+                len(messages),
+                len(completed),
+            )
+        return completed
 
     async def _flush_album_later(
         self,
@@ -335,7 +377,10 @@ class ChannelForwardModule(BaseModule):
             self._album_tasks.pop(key, None)
             if not messages:
                 return
-            messages.sort(key=lambda m: m.id)
+            chat_id, grouped_id = key
+            messages = await self._complete_album(chat_id, grouped_id, messages)
+            if not messages:
+                return
             await self._deliver_to_routes(messages, routes)
         except asyncio.CancelledError:
             return
