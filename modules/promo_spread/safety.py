@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.config import ROOT
+from app.paths import data_path
 from app.storage import load_json, save_json
 
 logger = logging.getLogger(__name__)
@@ -106,7 +106,7 @@ class SafetyGuard:
 
     def __init__(self, cfg: SafetyConfig, path: Path | None = None) -> None:
         self.cfg = cfg
-        self.path = path or (ROOT / "data" / "promo_safety.json")
+        self.path = path or data_path("promo_safety.json")
         self._lock = threading.Lock()
         self._data = load_json(
             self.path,

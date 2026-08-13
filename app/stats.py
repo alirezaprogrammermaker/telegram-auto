@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from app.config import ROOT
+from app.paths import data_path
 from app.storage import load_json, save_json
 
 _DEFAULT_TZ = "Asia/Tehran"
@@ -16,7 +16,7 @@ _lock = threading.Lock()
 
 class StatsStore:
     def __init__(self, path: Path | None = None, timezone: str = _DEFAULT_TZ) -> None:
-        self.path = path or (ROOT / "data" / "stats.json")
+        self.path = path or data_path("stats.json")
         self.timezone = timezone
         self._data: dict[str, Any] = load_json(self.path, {"days": {}})
 

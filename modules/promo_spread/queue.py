@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from app.config import ROOT
+from app.paths import data_path
 from app.storage import load_json, save_json
 
 _lock = threading.Lock()
@@ -15,7 +15,7 @@ _lock = threading.Lock()
 
 class PromoQueue:
     def __init__(self, path: Path | None = None) -> None:
-        self.path = path or (ROOT / "data" / "promo_queue.json")
+        self.path = path or data_path("promo_queue.json")
         self._data: dict[str, Any] = load_json(self.path, {"items": []})
 
     def _save(self) -> None:

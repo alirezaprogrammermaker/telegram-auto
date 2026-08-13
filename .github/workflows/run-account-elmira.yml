@@ -1,9 +1,12 @@
-# Backward-compatible dispatch alias → Elmira.
-# Scheduled runs live on run-account-elmira.yml (avoid double cron).
+# Production account: Elmira (channel_forward + digest + auto_reply)
+# Session secret: TELEGRAM_SESSION_B64
+# Profile: config/accounts/elmira.json
 
-name: run-every-6h
+name: run-account-elmira
 
 on:
+  schedule:
+    - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
       max_runtime_seconds:

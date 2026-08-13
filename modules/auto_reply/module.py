@@ -12,7 +12,7 @@ from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError, RPCError
 
 from app.base import BaseModule
-from app.config import ROOT
+from app.paths import ROOT, data_path
 from app.progress import ProgressMessenger
 from app.storage import load_json, save_json
 
@@ -76,10 +76,15 @@ class AutoReplyModule(BaseModule):
         }
         self.send_help_on_login = bool(config.get("send_help_on_login", True))
 
-        state_name = str(config.get("admins_file") or "data/admins.json")
-        self.admins_path = Path(state_name)
-        if not self.admins_path.is_absolute():
-            self.admins_path = ROOT / self.admins_path
+        state_name = str(config.get("admins_file") or "admins.json")
+        # Always keep admins under the account data dir unless absolute path given.
+        admins_path = Path(state_name)
+        if admins_path.is_absolute():
+            self.admins_path = admins_path
+        elif state_name.replace("\\", "/").startswith("data/"):
+            self.admins_path = data_path(Path(state_name).name)
+        else:
+            self.admins_path = data_path(state_name)
 
         # CI runners start with an empty data/ dir, so seed trusted admins
         # from the environment instead of forcing a re-login every restart.

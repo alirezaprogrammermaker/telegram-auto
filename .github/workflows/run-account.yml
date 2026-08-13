@@ -1,0 +1,105 @@
+# Reusable runner for one Telegram account identity.
+# Callers pass ACCOUNT_ID, session name, and that account's session secret.
+#
+# Isolation:
+#   - concurrency group per account
+#   - cache key per account (data/<account_id>)
+#   - separate .session file name
+#   - module profile via config/accounts/<id>.json
+
+name: run-account
+
+on:
+  workflow_call:
+    inputs:
+      account_id:
+        description: "Account id (matches config/accounts/*.json)"
+        required: true
+        type: string
+      session_name:
+        description: "Telethon session file stem"
+        required: true
+        type: string
+      max_runtime_seconds:
+        description: "Clean exit after N seconds (default ~5h55m)"
+        required: false
+        type: string
+        default: "21300"
+    secrets:
+      API_ID:
+        required: true
+      API_HASH:
+        required: true
+      ADMIN_PASSWORD:
+        required: true
+      TELEGRAM_SESSION_B64:
+        required: false
+      ADMIN_IDS:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    concurrency:
+      group: telegram-auto-${{ inputs.account_id }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repo
+        run: |
+          set -euo pipefail
+          rm -rf ./* ./.[!.]* 2>/dev/null || true
+          git clone --depth 1 --branch master \
+            "https://github.com/${GITHUB_REPOSITORY}.git" repo
+          shopt -s dotglob
+          mv repo/* .
+          rm -rf repo
+
+      - name: Install deps
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade --quiet pip
+          python3 -m pip install --quiet -r requirements.txt
+
+      - name: Restore account data
+        uses: actions/cache@v4
+        with:
+          path: data/${{ inputs.account_id }}
+          key: data-${{ github.repository }}-${{ inputs.account_id }}-v1
+          restore-keys: |
+            data-${{ github.repository }}-${{ inputs.account_id }}-
+            data-${{ github.repository }}-
+
+      - name: Prepare session + data
+        id: prep
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          SESSION_NAME: ${{ inputs.session_name }}
+          TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
+          DATA_DIR: data/${{ inputs.account_id }}
+        run: python3 scripts/prepare_gha_session.py
+
+      - name: Run app
+        if: steps.prep.outputs.skip != 'true'
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          DATA_DIR: data/${{ inputs.account_id }}
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
+          SESSION_NAME: ${{ inputs.session_name }}
+          LOCK_FILE: telegram_auto.${{ inputs.account_id }}.lock
+          LOG_LEVEL: INFO
+          MAX_RUNTIME_SECONDS: ${{ inputs.max_runtime_seconds }}
+          FLOOD_SLEEP_THRESHOLD: "120"
+        run: python3 main.py
+
+      - name: Skipped (no session secret)
+        if: steps.prep.outputs.skip == 'true'
+        run: |
+          echo "Account '${{ inputs.account_id }}' has no TELEGRAM_SESSION_B64 — skipped."
+          echo "Add the secret, set enabled=true in config/accounts.json, then re-run."

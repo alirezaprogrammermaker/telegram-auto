@@ -10,10 +10,10 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-ROOT = Path(__file__).resolve().parent.parent
+from app.accounts import apply_account_modules
+from app.paths import ROOT, account_id, data_dir, ensure_data_dir, lock_file_path, runtime_modules_path
+
 MODULES_CONFIG_PATH = ROOT / "config" / "modules.json"
-# Survives GHA restarts via the data/ cache; admin edits write here too.
-RUNTIME_MODULES_PATH = ROOT / "data" / "modules.runtime.json"
 
 logger = logging.getLogger(__name__)
 
@@ -29,10 +29,13 @@ class AppConfig:
     root: Path
     modules: dict[str, dict[str, Any]]
     flood_sleep_threshold: int
+    account_id: str
+    data_dir: Path
 
 
 def load_app_config() -> AppConfig:
     load_dotenv(ROOT / ".env")
+    ensure_data_dir()
 
     api_id_raw = os.environ.get("API_ID", "").strip()
     api_hash = os.environ.get("API_HASH", "").strip()
@@ -42,8 +45,7 @@ def load_app_config() -> AppConfig:
     session_name = os.environ.get("SESSION_NAME", "easy_seen").strip() or "easy_seen"
     phone = os.environ.get("PHONE", "").replace(" ", "") or None
     log_level = os.environ.get("LOG_LEVEL", "INFO").upper()
-    lock_name = os.environ.get("LOCK_FILE", "telegram_auto.lock")
-    lock_file = ROOT / lock_name
+    acc = account_id()
 
     try:
         flood_threshold = int(os.environ.get("FLOOD_SLEEP_THRESHOLD", "120"))
@@ -51,26 +53,37 @@ def load_app_config() -> AppConfig:
         flood_threshold = 120
 
     modules = _load_modules_config()
+    modules = apply_account_modules(modules, acc)
+
+    logger.info(
+        "Config account_id=%s session=%s data_dir=%s",
+        acc,
+        session_name,
+        data_dir(),
+    )
+
     return AppConfig(
         api_id=int(api_id_raw),
         api_hash=api_hash,
         session_name=session_name,
         phone=phone,
         log_level=log_level,
-        lock_file=lock_file,
+        lock_file=lock_file_path(),
         root=ROOT,
         modules=modules,
         flood_sleep_threshold=max(0, flood_threshold),
+        account_id=acc,
+        data_dir=data_dir(),
     )
 
 
 def _load_modules_config() -> dict[str, dict[str, Any]]:
     # Prefer runtime overlay (persisted under data/) so routes added via chat
     # survive GitHub Actions job restarts. Fall back to repo config.
-    for path in (RUNTIME_MODULES_PATH, MODULES_CONFIG_PATH):
+    for path in (runtime_modules_path(), MODULES_CONFIG_PATH):
         loaded = _read_modules_file(path)
         if loaded is not None:
-            if path == RUNTIME_MODULES_PATH:
+            if path == runtime_modules_path():
                 logger.info("Loaded module config from runtime overlay %s", path)
             return loaded
 

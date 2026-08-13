@@ -76,10 +76,12 @@ async def run() -> None:
 
         me = await client.get_me()
         logger.info(
-            "Connected as %s (@%s) id=%s",
+            "Connected as %s (@%s) id=%s account_id=%s data_dir=%s",
             me.first_name,
             me.username,
             me.id,
+            config.account_id,
+            config.data_dir,
         )
 
         modules = await load_modules(client, config.modules)

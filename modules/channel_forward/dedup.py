@@ -9,7 +9,7 @@ from typing import Any
 
 from telethon.tl.types import Message
 
-from app.config import ROOT
+from app.paths import data_path
 from app.storage import load_json, save_json
 
 from modules.channel_forward.media_filter import detect_media_type
@@ -27,7 +27,7 @@ def content_fingerprint(message: Message) -> str:
 
 class DedupStore:
     def __init__(self, path: Path | None = None) -> None:
-        self.path = path or (ROOT / "data" / "dedup.json")
+        self.path = path or data_path("dedup.json")
         self._data: dict[str, Any] = load_json(self.path, {"entries": []})
 
     def _save(self) -> None:

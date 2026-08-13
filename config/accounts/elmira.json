@@ -1,0 +1,11 @@
+{
+  "id": "elmira",
+  "label": "Elmira — main forward account",
+  "session_name": "easy_seen",
+  "modules": {
+    "auto_reply": { "enabled": true },
+    "channel_forward": { "enabled": true },
+    "digest": { "enabled": true },
+    "promo_spread": { "enabled": false }
+  }
+}

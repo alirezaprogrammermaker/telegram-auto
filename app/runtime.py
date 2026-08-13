@@ -8,8 +8,9 @@ from typing import Any
 from telethon import TelegramClient
 
 from app.base import BaseModule
-from app.config import MODULES_CONFIG_PATH, RUNTIME_MODULES_PATH, module_enabled
+from app.config import MODULES_CONFIG_PATH, module_enabled
 from app.loader import MODULE_REGISTRY, _import_module_class
+from app.paths import ensure_data_dir, runtime_modules_path
 from app.storage import save_json
 
 logger = logging.getLogger(__name__)
@@ -49,11 +50,11 @@ class ModuleRuntime:
     def persist(self) -> None:
         payload = {"modules": self.modules_config}
         save_json(MODULES_CONFIG_PATH, payload)
-        # Mirror into data/ so GitHub Actions cache restores admin edits
-        # (routes added via /forward add) on the next job.
-        RUNTIME_MODULES_PATH.parent.mkdir(parents=True, exist_ok=True)
-        save_json(RUNTIME_MODULES_PATH, payload)
-        logger.info("Saved module config → %s (+ runtime overlay)", MODULES_CONFIG_PATH)
+        # Mirror into account data/ so GHA cache restores admin edits.
+        ensure_data_dir()
+        overlay = runtime_modules_path()
+        save_json(overlay, payload)
+        logger.info("Saved module config → %s (+ %s)", MODULES_CONFIG_PATH, overlay)
 
     async def stop_module(self, name: str) -> str:
         mod = self.loaded.pop(name, None)

@@ -19,7 +19,10 @@ def main() -> None:
     encoded = base64.b64encode(path.read_bytes()).decode("ascii")
     print(encoded)
     print(f"\n# file={path.name} bytes={path.stat().st_size} b64_len={len(encoded)}", file=sys.stderr)
-    print("# Set GitHub secret TELEGRAM_SESSION_B64 to the line printed above.", file=sys.stderr)
+    print("# Set the matching GitHub secret, e.g.:", file=sys.stderr)
+    print("#   easy_seen → TELEGRAM_SESSION_B64", file=sys.stderr)
+    print("#   promo1    → TELEGRAM_SESSION_B64_PROMO1", file=sys.stderr)
+    print("# See config/accounts.json and docs/multi-account.md", file=sys.stderr)
 
 
 if __name__ == "__main__":

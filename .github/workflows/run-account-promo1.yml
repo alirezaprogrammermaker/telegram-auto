@@ -1,9 +1,15 @@
-# Backward-compatible dispatch alias → Elmira.
-# Scheduled runs live on run-account-elmira.yml (avoid double cron).
+# Promo worker account (promo_spread only). Isolated from Elmira.
+# Session secret: TELEGRAM_SESSION_B64_PROMO1
+# Profile: config/accounts/promo1.json
+#
+# Until the secret exists, the reusable workflow skips cleanly (no failure).
+# After login + export: set secret, enable in config/accounts.json, dispatch.
 
-name: run-every-6h
+name: run-account-promo1
 
 on:
+  schedule:
+    - cron: "5 */6 * * *"
   workflow_dispatch:
     inputs:
       max_runtime_seconds:
@@ -15,15 +21,15 @@ permissions:
   contents: read
 
 jobs:
-  elmira:
+  promo1:
     uses: ./.github/workflows/run-account.yml
     with:
-      account_id: elmira
-      session_name: easy_seen
+      account_id: promo1
+      session_name: promo1
       max_runtime_seconds: ${{ inputs.max_runtime_seconds || '21300' }}
     secrets:
       API_ID: ${{ secrets.API_ID }}
       API_HASH: ${{ secrets.API_HASH }}
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
-      TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
+      TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64_PROMO1 }}
       ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
