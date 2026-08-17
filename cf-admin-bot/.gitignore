@@ -1,0 +1,13 @@
+.venv/
+.venv-workers/
+__pycache__/
+*.pyc
+node_modules/
+.wrangler/
+.dev.vars
+.env
+.python-version
+uv.lock
+python_modules/
+.webhook_secret.tmp
+.bridge_token.tmp

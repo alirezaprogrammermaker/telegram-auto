@@ -1,0 +1,14 @@
+{
+  "name": "telegram-admin-bot",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "vendor": "node scripts/vendor-workers.mjs",
+    "deploy": "npm run vendor && npx wrangler deploy",
+    "dev": "uv run pywrangler dev",
+    "tail": "npx wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.114.0"
+  }
+}

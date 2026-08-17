@@ -1,11 +1,16 @@
 # Login a Telegram account entirely on GitHub-hosted runners (runner IP).
 # Avoids home-IP login → datacenter-IP session use (Telegram may treat that as theft).
 #
-# Flow (use manage.ps1 helpers):
-#   1) login-send     → sets LOGIN_PHONE secret, requests OTP on runner IP
-#   2) login-otp      → stores LOGIN_OTP (and login-2fa if needed) as secrets
-#   3) login-complete → signs in on runner IP + writes TELEGRAM_SESSION_B64_*
-#   4) delete LOGIN_OTP / LOGIN_2FA / LOGIN_PHONE
+# Flow (manage.ps1 OR admin-bot):
+#   1) send     → request OTP on runner IP
+#   2) complete → sign in + write TELEGRAM_SESSION_B64_*
+#
+# Credentials source (first match wins):
+#   A) Admin-bot bridge (preferred for bot-driven login):
+#        secrets.ADMIN_BOT_BRIDGE_URL + ADMIN_BOT_BRIDGE_TOKEN
+#        GET {url}/internal/login/{account_id}?action=send|complete
+#   B) Temporary repo secrets (manage.ps1):
+#        LOGIN_PHONE / LOGIN_OTP / LOGIN_2FA
 #
 # Required one-time secret:
 #   REPO_SECRETS_TOKEN = PAT that can write repository secrets
@@ -71,6 +76,81 @@ jobs:
         env:
           ACCOUNT_ID: ${{ inputs.account_id }}
 
+      - name: Resolve login credentials
+        id: creds
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          ACTION: ${{ inputs.action }}
+          BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          BRIDGE_URL_VAR: ${{ vars.ADMIN_BOT_BRIDGE_URL }}
+          BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+          BRIDGE_TOKEN_VAR: ${{ vars.ADMIN_BOT_BRIDGE_TOKEN }}
+          LOGIN_PHONE_SECRET: ${{ secrets.LOGIN_PHONE }}
+          LOGIN_OTP_SECRET: ${{ secrets.LOGIN_OTP }}
+          LOGIN_2FA_SECRET: ${{ secrets.LOGIN_2FA }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json, os, urllib.request
+
+          action = os.environ["ACTION"].strip()
+          account_id = os.environ["ACCOUNT_ID"].strip()
+          bridge_url = (
+              (os.environ.get("BRIDGE_URL") or "").rstrip("/")
+              or (os.environ.get("BRIDGE_URL_VAR") or "").rstrip("/")
+              or "https://telegram-admin-bot.social-panel.workers.dev"
+          )
+          bridge_token = (
+              os.environ.get("BRIDGE_TOKEN")
+              or os.environ.get("BRIDGE_TOKEN_VAR")
+              or ""
+          )
+
+          phone = ""
+          otp = ""
+          twofa = ""
+
+          if bridge_url and bridge_token:
+              print("Using admin-bot bridge for credentials")
+              req = urllib.request.Request(
+                  f"{bridge_url}/internal/login/{account_id}?action={action}",
+                  headers={
+                      "Authorization": f"Bearer {bridge_token}",
+                      "Accept": "application/json",
+                      "User-Agent": "login-account-workflow",
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(req, timeout=30) as resp:
+                      data = json.loads(resp.read().decode("utf-8"))
+                  if isinstance(data, dict) and data.get("ok"):
+                      phone = str(data.get("phone") or "")
+                      otp = str(data.get("otp") or "")
+                      twofa = str(data.get("twofa") or "")
+                  else:
+                      print("::warning::Bridge returned unexpected payload")
+              except Exception as exc:
+                  print(f"::warning::Bridge fetch failed: {exc}")
+
+          if not phone:
+              phone = os.environ.get("LOGIN_PHONE_SECRET") or ""
+          if not otp:
+              otp = os.environ.get("LOGIN_OTP_SECRET") or ""
+          if not twofa:
+              twofa = os.environ.get("LOGIN_2FA_SECRET") or ""
+
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a", encoding="utf-8") as fh:
+              for key, val in (("phone", phone), ("otp", otp), ("twofa", twofa)):
+                  fh.write(f"{key}<<EOF\n{val}\nEOF\n")
+
+          if action == "send" and not phone:
+              raise SystemExit("No phone from bridge or LOGIN_PHONE secret")
+          if action == "complete" and not otp:
+              raise SystemExit("No OTP from bridge or LOGIN_OTP secret")
+          print(f"Credentials resolved for action={action} (values not printed)")
+          PY
+
       - name: Install deps
         run: |
           python3 -m pip install --upgrade --quiet pip
@@ -97,12 +177,12 @@ jobs:
           DATA_DIR: data/${{ inputs.account_id }}
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
-          LOGIN_PHONE: ${{ secrets.LOGIN_PHONE }}
-          PHONE: ${{ secrets.LOGIN_PHONE }}
+          LOGIN_PHONE: ${{ steps.creds.outputs.phone }}
+          PHONE: ${{ steps.creds.outputs.phone }}
         run: |
           set -euo pipefail
           if [ -z "${LOGIN_PHONE}" ]; then
-            echo "::error::LOGIN_PHONE secret empty. Use: .\\manage.ps1 login-send -Account ${{ inputs.account_id }} -Phone +98..."
+            echo "::error::LOGIN_PHONE empty after credential resolve"
             exit 1
           fi
           # Fresh login attempt — drop stale authorized session from a prior complete.
@@ -110,9 +190,7 @@ jobs:
                 "${{ steps.acc.outputs.session_name }}.session-journal" \
                 pending_login.json
           python3 scripts/gha_login.py send --phone "$LOGIN_PHONE"
-          echo "OTP requested on runner IP. Next:"
-          echo "  .\\manage.ps1 login-otp"
-          echo "  .\\manage.ps1 login-complete -Account ${{ inputs.account_id }} -Yes"
+          echo "OTP requested on runner IP."
 
       - name: Save login scratch after send
         if: inputs.action == 'send' && success()
@@ -132,8 +210,8 @@ jobs:
           DATA_DIR: data/${{ inputs.account_id }}
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
-          LOGIN_OTP: ${{ secrets.LOGIN_OTP }}
-          LOGIN_2FA: ${{ secrets.LOGIN_2FA }}
+          LOGIN_OTP: ${{ steps.creds.outputs.otp }}
+          LOGIN_2FA: ${{ steps.creds.outputs.twofa }}
           GH_TOKEN: ${{ secrets.REPO_SECRETS_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.REPO_SECRETS_TOKEN }}
         run: |
@@ -143,7 +221,7 @@ jobs:
             exit 1
           fi
           if [ -z "${LOGIN_OTP}" ]; then
-            echo "::error::LOGIN_OTP secret empty — run: .\\manage.ps1 login-otp"
+            echo "::error::LOGIN_OTP empty after credential resolve"
             exit 1
           fi
           if [ ! -f pending_login.json ]; then
@@ -151,7 +229,4 @@ jobs:
             exit 1
           fi
           python3 scripts/gha_login.py complete --secret-name "${{ steps.acc.outputs.session_secret }}"
-          echo "Login complete. Clear temporary secrets:"
-          echo "  gh secret delete LOGIN_OTP --yes"
-          echo "  gh secret delete LOGIN_2FA --yes"
-          echo "  gh secret delete LOGIN_PHONE --yes"
+          echo "Login complete."

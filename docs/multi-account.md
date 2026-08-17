@@ -63,7 +63,11 @@ Roles for `account-add`:
 
 - `promo` — `promo_spread` only (`dry_run: true`)
 - `forward` — `channel_forward` + digest
-- `full` — both
+- `collector` — `link_harvest` only (read link directories)
+- `inspector` — `group_inspect` only (slow join/check/leave)
+- `full` — forward + promo (not for discovery)
+
+See [group-discovery.md](group-discovery.md) for the safe collector → inspector → promo pipeline.
 
 Disabled accounts (`enabled: false`) are skipped by the runner even if cron fires.
 
@@ -83,9 +87,12 @@ Mitigations:
 Different IP (home → datacenter) looks like session theft to Telegram.
 
 Phone / OTP / 2FA are stored as **temporary secrets** (`LOGIN_PHONE`, `LOGIN_OTP`, `LOGIN_2FA`),
-never as public `workflow_dispatch` inputs.
+never as public `workflow_dispatch` inputs — **or** provided by the Cloudflare admin-bot bridge
+(`ADMIN_BOT_BRIDGE_URL` + `ADMIN_BOT_BRIDGE_TOKEN`) when driving login from Telegram.
 
 Workflow: `.github/workflows/login-account.yml`
+
+Admin bot: `cf-admin-bot/` → menu **اکانت‌ها** (scaffold + OTP wizard).
 
 ## Monitoring
 
@@ -102,3 +109,4 @@ Workflow: `.github/workflows/login-account.yml`
 - Local/dev only: `SESSION_NAME=dev_seen`
 - Production logins: GHA `login-account` only
 - Prefer dedicated promo accounts (not Elmira) for `/promo`
+- Discovery: dedicated collector/inspector accounts only — see [group-discovery.md](group-discovery.md)
