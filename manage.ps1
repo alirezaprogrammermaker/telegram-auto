@@ -338,7 +338,9 @@ function Invoke-GhaCancel {
     $acc = Get-AccountOrDefault $Account
     $id = $RunId
     if (-not $id) {
-        $id = gh run list --workflow="$($acc.workflow)" --limit 5 --json databaseId,status --jq '.[] | select(.status=="in_progress" or .status=="queued") | .databaseId' | Select-Object -First 1
+        $rows = gh run list --workflow="$($acc.workflow)" --limit 8 --json databaseId,status | ConvertFrom-Json
+        $active = @($rows | Where-Object { $_.status -in @("in_progress", "queued", "pending", "waiting") })
+        if ($active.Count -gt 0) { $id = [string]$active[0].databaseId }
     }
     if (-not $id) { Write-Info "No active run for $($acc.id)"; return }
     if (-not $Yes) {
