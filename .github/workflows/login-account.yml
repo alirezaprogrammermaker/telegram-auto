@@ -1,0 +1,157 @@
+# Login a Telegram account entirely on GitHub-hosted runners (runner IP).
+# Avoids home-IP login → datacenter-IP session use (Telegram may treat that as theft).
+#
+# Flow (use manage.ps1 helpers):
+#   1) login-send     → sets LOGIN_PHONE secret, requests OTP on runner IP
+#   2) login-otp      → stores LOGIN_OTP (and login-2fa if needed) as secrets
+#   3) login-complete → signs in on runner IP + writes TELEGRAM_SESSION_B64_*
+#   4) delete LOGIN_OTP / LOGIN_2FA / LOGIN_PHONE
+#
+# Required one-time secret:
+#   REPO_SECRETS_TOKEN = PAT that can write repository secrets
+#   Classic: repo scope | Fine-grained: Secrets: Read and write
+
+name: login-account
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "send = request OTP | complete = finish login + save session secret"
+        required: true
+        type: choice
+        options:
+          - send
+          - complete
+      account_id:
+        description: "Account id from config/accounts.json (e.g. promo1, promo2)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  login:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    concurrency:
+      group: login-${{ inputs.account_id }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        run: |
+          set -euo pipefail
+          rm -rf ./* ./.[!.]* 2>/dev/null || true
+          git clone --depth 1 --branch master \
+            "https://github.com/${GITHUB_REPOSITORY}.git" repo
+          shopt -s dotglob
+          mv repo/* .
+          rm -rf repo
+
+      - name: Resolve account
+        id: acc
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          acc = os.environ["ACCOUNT_ID"].strip()
+          rows = json.loads(Path("config/accounts.json").read_text(encoding="utf-8"))["accounts"]
+          row = next((r for r in rows if r.get("id") == acc), None)
+          if not row:
+              print(f"::error::Unknown account_id={acc!r}. Scaffold it first (manage.ps1 account-add).")
+              sys.exit(1)
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a", encoding="utf-8") as fh:
+              fh.write(f"session_name={row['session_name']}\n")
+              fh.write(f"session_secret={row['session_secret']}\n")
+          print(f"account={acc} session={row['session_name']} secret={row['session_secret']}")
+          PY
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+
+      - name: Install deps
+        run: |
+          python3 -m pip install --upgrade --quiet pip
+          python3 -m pip install --quiet -r requirements.txt
+
+      - name: Restore login scratch (session + pending hash)
+        id: scratch
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            pending_login.json
+            ${{ steps.acc.outputs.session_name }}.session
+            ${{ steps.acc.outputs.session_name }}.session-journal
+          key: login-scratch-${{ inputs.account_id }}-${{ github.run_id }}
+          restore-keys: |
+            login-scratch-${{ inputs.account_id }}-
+
+      - name: Send OTP
+        if: inputs.action == 'send'
+        id: send
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          SESSION_NAME: ${{ steps.acc.outputs.session_name }}
+          DATA_DIR: data/${{ inputs.account_id }}
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          LOGIN_PHONE: ${{ secrets.LOGIN_PHONE }}
+          PHONE: ${{ secrets.LOGIN_PHONE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${LOGIN_PHONE}" ]; then
+            echo "::error::LOGIN_PHONE secret empty. Use: .\\manage.ps1 login-send -Account ${{ inputs.account_id }} -Phone +98..."
+            exit 1
+          fi
+          # Fresh login attempt — drop stale authorized session from a prior complete.
+          rm -f "${{ steps.acc.outputs.session_name }}.session" \
+                "${{ steps.acc.outputs.session_name }}.session-journal" \
+                pending_login.json
+          python3 scripts/gha_login.py send --phone "$LOGIN_PHONE"
+          echo "OTP requested on runner IP. Next:"
+          echo "  .\\manage.ps1 login-otp"
+          echo "  .\\manage.ps1 login-complete -Account ${{ inputs.account_id }} -Yes"
+
+      - name: Save login scratch after send
+        if: inputs.action == 'send' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            pending_login.json
+            ${{ steps.acc.outputs.session_name }}.session
+            ${{ steps.acc.outputs.session_name }}.session-journal
+          key: login-scratch-${{ inputs.account_id }}-${{ github.run_id }}
+
+      - name: Complete login + write session secret
+        if: inputs.action == 'complete'
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          SESSION_NAME: ${{ steps.acc.outputs.session_name }}
+          DATA_DIR: data/${{ inputs.account_id }}
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          LOGIN_OTP: ${{ secrets.LOGIN_OTP }}
+          LOGIN_2FA: ${{ secrets.LOGIN_2FA }}
+          GH_TOKEN: ${{ secrets.REPO_SECRETS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.REPO_SECRETS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::REPO_SECRETS_TOKEN missing (PAT that can write repo secrets)"
+            exit 1
+          fi
+          if [ -z "${LOGIN_OTP}" ]; then
+            echo "::error::LOGIN_OTP secret empty — run: .\\manage.ps1 login-otp"
+            exit 1
+          fi
+          if [ ! -f pending_login.json ]; then
+            echo "::error::pending_login.json missing — run login-send first and wait for it to finish"
+            exit 1
+          fi
+          python3 scripts/gha_login.py complete --secret-name "${{ steps.acc.outputs.session_secret }}"
+          echo "Login complete. Clear temporary secrets:"
+          echo "  gh secret delete LOGIN_OTP --yes"
+          echo "  gh secret delete LOGIN_2FA --yes"
+          echo "  gh secret delete LOGIN_PHONE --yes"

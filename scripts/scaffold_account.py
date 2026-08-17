@@ -1,0 +1,247 @@
+"""Scaffold a new multi-account identity (registry + profile + GHA caller).
+
+Usage:
+  python scripts/scaffold_account.py promo2 --role promo --label "Promo worker 2"
+  python scripts/scaffold_account.py forward2 --role forward
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+REGISTRY = ROOT / "config" / "accounts.json"
+ACCOUNTS_DIR = ROOT / "config" / "accounts"
+WORKFLOWS = ROOT / ".github" / "workflows"
+
+ID_RE = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
+
+
+def secret_name_for(account_id: str) -> str:
+    if account_id == "elmira":
+        return "TELEGRAM_SESSION_B64"
+    return f"TELEGRAM_SESSION_B64_{account_id.upper()}"
+
+
+def cron_for(account_id: str) -> str:
+    # Stagger within the hour so many accounts don't start together.
+    minute = sum(ord(c) for c in account_id) % 50
+    return f"{minute} */6 * * *"
+
+
+def profile_modules(role: str) -> dict:
+    if role == "promo":
+        return {
+            "auto_reply": {"enabled": True},
+            "channel_forward": {"enabled": False},
+            "digest": {"enabled": False},
+            "promo_spread": {
+                "enabled": True,
+                "dry_run": True,
+                "paused": False,
+                "mode": "forward",
+                "auto_join": False,
+                "routes": [],
+            },
+        }
+    if role == "forward":
+        return {
+            "auto_reply": {"enabled": True},
+            "channel_forward": {"enabled": True, "auto_join": False, "routes": []},
+            "digest": {"enabled": True},
+            "promo_spread": {"enabled": False},
+        }
+    # full
+    return {
+        "auto_reply": {"enabled": True},
+        "channel_forward": {"enabled": True, "auto_join": False, "routes": []},
+        "digest": {"enabled": True},
+        "promo_spread": {
+            "enabled": True,
+            "dry_run": True,
+            "paused": False,
+            "mode": "forward",
+            "auto_join": False,
+            "routes": [],
+        },
+    }
+
+
+def workflow_yaml(account_id: str, session_name: str, secret: str, cron: str) -> str:
+    return f"""# Auto-scaffolded by scripts/scaffold_account.py
+# Session secret: {secret}
+# Profile: config/accounts/{account_id}.json
+
+name: run-account-{account_id}
+
+on:
+  schedule:
+    - cron: "{cron}"
+  workflow_dispatch:
+    inputs:
+      max_runtime_seconds:
+        description: "Seconds to run before clean exit (default 5h55m)"
+        required: false
+        default: "21300"
+
+permissions:
+  contents: read
+
+jobs:
+  {account_id}:
+    uses: ./.github/workflows/run-account.yml
+    with:
+      account_id: {account_id}
+      session_name: {session_name}
+      max_runtime_seconds: ${{{{ inputs.max_runtime_seconds || '21300' }}}}
+    secrets:
+      API_ID: ${{{{ secrets.API_ID }}}}
+      API_HASH: ${{{{ secrets.API_HASH }}}}
+      ADMIN_PASSWORD: ${{{{ secrets.ADMIN_PASSWORD }}}}
+      TELEGRAM_SESSION_B64: ${{{{ secrets.{secret} }}}}
+      ADMIN_IDS: ${{{{ secrets.ADMIN_IDS }}}}
+"""
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Scaffold a Telegram account for GHA")
+    parser.add_argument("account_id", help="lowercase id, e.g. promo2")
+    parser.add_argument(
+        "--role",
+        choices=["promo", "forward", "full"],
+        default="promo",
+        help="Module profile template",
+    )
+    parser.add_argument("--label", default="", help="Human label")
+    parser.add_argument(
+        "--session-name",
+        default="",
+        help="Telethon session stem (default = account_id)",
+    )
+    parser.add_argument(
+        "--enable",
+        action="store_true",
+        help="Set enabled=true in registry (default: false until login)",
+    )
+    parser.add_argument("--force", action="store_true", help="Overwrite existing files")
+    args = parser.parse_args()
+
+    account_id = args.account_id.strip().lower()
+    if not ID_RE.match(account_id):
+        print(
+            json.dumps(
+                {
+                    "status": "failed",
+                    "error": "account_id must match ^[a-z][a-z0-9_]{1,31}$",
+                }
+            )
+        )
+        return 1
+
+    session_name = (args.session_name or account_id).strip()
+    secret = secret_name_for(account_id)
+    label = args.label.strip() or f"{account_id} ({args.role})"
+    workflow_name = f"run-account-{account_id}.yml"
+    profile_path = ACCOUNTS_DIR / f"{account_id}.json"
+    workflow_path = WORKFLOWS / workflow_name
+
+    if not REGISTRY.exists():
+        print(json.dumps({"status": "failed", "error": "missing config/accounts.json"}))
+        return 1
+
+    data = json.loads(REGISTRY.read_text(encoding="utf-8"))
+    rows = data.setdefault("accounts", [])
+    if not isinstance(rows, list):
+        print(json.dumps({"status": "failed", "error": "accounts.json invalid"}))
+        return 1
+
+    existing = next((r for r in rows if r.get("id") == account_id), None)
+    if existing and not args.force:
+        print(
+            json.dumps(
+                {
+                    "status": "exists",
+                    "account_id": account_id,
+                    "error": "already in registry — pass --force to overwrite files",
+                }
+            )
+        )
+        return 1
+
+    if (profile_path.exists() or workflow_path.exists()) and not args.force and not existing:
+        print(
+            json.dumps(
+                {
+                    "status": "failed",
+                    "error": f"files already exist for {account_id} — use --force",
+                }
+            )
+        )
+        return 1
+
+    ACCOUNTS_DIR.mkdir(parents=True, exist_ok=True)
+    WORKFLOWS.mkdir(parents=True, exist_ok=True)
+
+    profile = {
+        "id": account_id,
+        "label": label,
+        "session_name": session_name,
+        "modules": profile_modules(args.role),
+    }
+    profile_path.write_text(
+        json.dumps(profile, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    cron = cron_for(account_id)
+    workflow_path.write_text(
+        workflow_yaml(account_id, session_name, secret, cron),
+        encoding="utf-8",
+    )
+
+    entry = {
+        "id": account_id,
+        "label": label,
+        "enabled": bool(args.enable),
+        "workflow": workflow_name,
+        "session_name": session_name,
+        "session_secret": secret,
+        "profile": f"config/accounts/{account_id}.json",
+    }
+    if existing:
+        idx = rows.index(existing)
+        rows[idx] = entry
+    else:
+        rows.append(entry)
+
+    REGISTRY.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    result = {
+        "status": "scaffolded",
+        "account_id": account_id,
+        "role": args.role,
+        "enabled": entry["enabled"],
+        "session_name": session_name,
+        "session_secret": secret,
+        "workflow": workflow_name,
+        "profile": str(profile_path.relative_to(ROOT)).replace("\\", "/"),
+        "cron": cron,
+        "next": [
+            "Commit + push these files to master",
+            f".\\manage.ps1 login-send -Account {account_id} -Phone +98...",
+            "Set LOGIN_OTP (and LOGIN_2FA if needed), then login-complete",
+            f"Optionally: .\\manage.ps1 account-enable -Account {account_id}",
+        ],
+    }
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

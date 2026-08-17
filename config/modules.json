@@ -43,134 +43,8 @@
         "hour": "23:00",
         "timezone": "Asia/Tehran"
       },
-      "routes": [
-        {
-          "source": "@channe_l_1",
-          "destination": "@channe_l_2",
-          "destinations": [
-            "@channe_l_2"
-          ],
-          "enabled": true,
-          "paused": false,
-          "forward_mode": "copy",
-          "filter": {
-            "enabled": true,
-            "remove_links": false,
-            "remove_mentions": false,
-            "remove_hashtags": false,
-            "remove_ids": false,
-            "prefix": "",
-            "suffix": "",
-            "collapse_whitespace": true,
-            "block_enabled": false,
-            "block_words": [],
-            "allow_enabled": false,
-            "allow_words": [],
-            "regex_enabled": false,
-            "regex_pattern": "",
-            "regex_must_match": true,
-            "link_replacements": {}
-          },
-          "media_filter": {
-            "enabled": false,
-            "allow": [],
-            "deny": []
-          },
-          "schedule": {
-            "enabled": false,
-            "timezone": "Asia/Tehran",
-            "days": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri",
-              "sat",
-              "sun"
-            ],
-            "windows": []
-          },
-          "dedup": {
-            "enabled": false,
-            "window_hours": 24
-          },
-          "delivery": {
-            "pin_latest": false,
-            "button_text": "",
-            "button_url": "",
-            "sync_edits": true,
-            "sync_deletes": true,
-            "preserve_reply": false,
-            "media_prefix": "",
-            "media_suffix": ""
-          },
-          "owner_id": null,
-          "visibility": "public"
-        },
-        {
-          "source": "@tabzlive",
-          "destination": "@channe_l_2",
-          "destinations": [
-            "@channe_l_2"
-          ],
-          "enabled": true,
-          "paused": false,
-          "forward_mode": "copy",
-          "filter": {
-            "enabled": false,
-            "remove_links": false,
-            "remove_mentions": false,
-            "remove_hashtags": false,
-            "remove_ids": false,
-            "prefix": "",
-            "suffix": "",
-            "collapse_whitespace": true,
-            "block_enabled": false,
-            "block_words": [],
-            "allow_enabled": false,
-            "allow_words": [],
-            "regex_enabled": false,
-            "regex_pattern": "",
-            "regex_must_match": true,
-            "link_replacements": {}
-          },
-          "media_filter": {
-            "enabled": false,
-            "allow": [],
-            "deny": []
-          },
-          "schedule": {
-            "enabled": false,
-            "timezone": "Asia/Tehran",
-            "days": [
-              "mon",
-              "tue",
-              "wed",
-              "thu",
-              "fri",
-              "sat",
-              "sun"
-            ],
-            "windows": []
-          },
-          "dedup": {
-            "enabled": false,
-            "window_hours": 24
-          },
-          "delivery": {
-            "pin_latest": false,
-            "button_text": "",
-            "button_url": "",
-            "sync_edits": true,
-            "sync_deletes": true,
-            "preserve_reply": false,
-            "media_prefix": "",
-            "media_suffix": ""
-          },
-          "owner_id": null,
-          "visibility": "public"
-        }
-      ]
+      "routes": [],
+      "auto_join": false
     },
     "digest": {
       "enabled": true,
@@ -183,17 +57,7 @@
       "dry_run": true,
       "paused": false,
       "mode": "forward",
-      "routes": [
-        {
-          "source": "@factready",
-          "groups": [
-            "https://t.me/+18urJPwXE8lmN2Q0"
-          ],
-          "enabled": true,
-          "paused": false,
-          "mode": "forward"
-        }
-      ],
+      "routes": [],
       "album_wait_seconds": 2.5,
       "safety": {
         "timezone": "Asia/Tehran",
@@ -234,7 +98,8 @@
         "require_member": true
       },
       "source": null,
-      "groups": []
+      "groups": [],
+      "auto_join": false
     }
   }
 }

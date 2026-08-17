@@ -108,13 +108,38 @@ async def ensure_joined(
     progress: ProgressMessenger | None = None,
     *,
     label: str = "کانال",
+    auto_join: bool = True,
 ) -> tuple[Any, str]:
+    """Resolve channel entity; optionally join if not a member.
+
+    auto_join=False is safer for production accounts that should not
+    silently join channels present in a shared modules.json.
+    """
     shown = display_ref(ref)
     if progress:
         await progress.step(f"بررسی عضویت {label}: `{shown}`")
 
     invite = invite_hash(ref)
     if invite:
+        if not auto_join:
+            # Still allow resolving if already a member via CheckChatInvite
+            from telethon.tl.functions.messages import CheckChatInviteRequest
+            from telethon.tl.types import ChatInviteAlready
+
+            try:
+                checked = await client(CheckChatInviteRequest(invite))
+            except Exception as exc:
+                raise ValueError(
+                    f"عضو `{shown}` نیستی و auto_join خاموش است"
+                ) from exc
+            if isinstance(checked, ChatInviteAlready):
+                if progress:
+                    await progress.step(f"از قبل عضو {label}: `{shown}`")
+                return checked.chat, "already"
+            raise ValueError(
+                f"عضو `{shown}` نیستی و auto_join خاموش است — دستی جوین کن یا از چت /forward add بزن"
+            )
+
         if progress:
             await progress.step(f"لینک دعوت تشخیص داده شد — تلاش برای جوین `{shown}`")
         try:
@@ -161,6 +186,12 @@ async def ensure_joined(
     except RPCError:
         pass
 
+    if not auto_join:
+        raise ValueError(
+            f"عضو `{shown}` نیستی و auto_join خاموش است — "
+            "دستی جوین کن یا موقتاً auto_join را روشن کن"
+        )
+
     if progress:
         await progress.step(f"عضو نیستم — جوین به {label}: `{shown}`")
 
@@ -196,15 +227,13 @@ async def ensure_can_post(
     if progress:
         await progress.step(f"بررسی کانال مقصد: `{display_ref(dest_ref)}`")
 
-    if auto_join:
-        entity, _join_status = await ensure_joined(
-            client,
-            dest_ref,
-            progress,
-            label="مقصد",
-        )
-    else:
-        entity = await client.get_entity(normalize_ref(dest_ref))
+    entity, _join_status = await ensure_joined(
+        client,
+        dest_ref,
+        progress,
+        label="مقصد",
+        auto_join=auto_join,
+    )
 
     if progress:
         await progress.step("بررسی حق ارسال پست در مقصد")

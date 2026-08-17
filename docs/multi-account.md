@@ -10,8 +10,8 @@ A ban or FloodWait on one account does not stop the others.
 | `config/accounts.json` | Registry (id, workflow, secret name, enabled) |
 | `config/accounts/<id>.json` | Module profile (what that account runs) |
 | `.github/workflows/run-account.yml` | Reusable job (checkout, cache, session, run) |
-| `.github/workflows/run-account-elmira.yml` | Elmira caller (forward) |
-| `.github/workflows/run-account-promo1.yml` | Promo worker caller |
+| `.github/workflows/run-account-<id>.yml` | Per-account caller (cron + dispatch) |
+| `.github/workflows/login-account.yml` | OTP login entirely on runner IP |
 | `ACCOUNT_ID` + `DATA_DIR` | Isolate `data/<id>/` state |
 
 ## Secrets
@@ -19,6 +19,7 @@ A ban or FloodWait on one account does not stop the others.
 Shared (all accounts):
 
 - `API_ID`, `API_HASH`, `ADMIN_PASSWORD`, `ADMIN_IDS` (optional)
+- `REPO_SECRETS_TOKEN` — PAT that can **write** repository secrets (needed for GHA login)
 
 Per account:
 
@@ -26,26 +27,67 @@ Per account:
 |---------|----------------|--------------|
 | elmira | `TELEGRAM_SESSION_B64` | `easy_seen.session` |
 | promo1 | `TELEGRAM_SESSION_B64_PROMO1` | `promo1.session` |
+| *(new)* | `TELEGRAM_SESSION_B64_<ID>` | `<id>.session` |
 
-Export a session:
+**Do not** create production sessions on your home PC. Use GHA login below so OTP + session save happen on the runner IP.
 
-```bash
-# login with SESSION_NAME=promo1 in .env first
-python scripts/export_session_b64.py promo1
-# paste into GitHub secret TELEGRAM_SESSION_B64_PROMO1
+## Add a new account (PowerShell)
+
+```powershell
+# 1) Scaffold registry + profile + workflow caller
+.\manage.ps1 account-add -Account promo2 -Role promo
+
+# 2) Commit + push (workflow must exist on GitHub before login)
+#    (ask the agent, or commit yourself, then:)
+.\manage.ps1 git-push -Yes
+
+# 3) One-time PAT for writing secrets
+.\manage.ps1 login-setup
+#    -> gh secret set REPO_SECRETS_TOKEN
+
+# 4) Login on runner IP only
+.\manage.ps1 login-send -Account promo2 -Phone +98912xxxxxxx -Yes
+.\manage.ps1 login-otp
+# if cloud password:
+.\manage.ps1 login-2fa
+.\manage.ps1 login-complete -Account promo2 -Yes
+.\manage.ps1 login-cleanup
+
+# 5) Enable + push + start
+.\manage.ps1 account-enable -Account promo2 -Yes
+# commit/push accounts.json
+.\manage.ps1 gha-dispatch -Account promo2
 ```
 
-## Enable promo1
+Roles for `account-add`:
 
-1. Login locally with a **dedicated** promo phone (`SESSION_NAME=promo1`)
-2. Set GitHub secret `TELEGRAM_SESSION_B64_PROMO1`
-3. Set `"enabled": true` for promo1 in `config/accounts.json`
-4. `Actions → run-account-promo1 → Run workflow`
-5. In Telegram DM to that account: `/promo add …` (dry_run starts on)
+- `promo` — `promo_spread` only (`dry_run: true`)
+- `forward` — `channel_forward` + digest
+- `full` — both
+
+Disabled accounts (`enabled: false`) are skipped by the runner even if cron fires.
+
+## Why Elmira joined local test channels
+
+Shared `config/modules.json` used to contain sample routes. On GHA start,
+`channel_forward` called `ensure_joined` and joined those sources.
+
+Mitigations:
+
+- committed `routes` is empty
+- `auto_join: false` by default (startup will **not** join; admin `/forward add` still can)
+- each account keeps its own routes in `data/<account>/modules.runtime.json`
+
+## Login only on GitHub runners (required for production)
+
+Different IP (home → datacenter) looks like session theft to Telegram.
+
+Phone / OTP / 2FA are stored as **temporary secrets** (`LOGIN_PHONE`, `LOGIN_OTP`, `LOGIN_2FA`),
+never as public `workflow_dispatch` inputs.
+
+Workflow: `.github/workflows/login-account.yml`
 
 ## Monitoring
-
-Use `manage.ps1` (English menu / CLI):
 
 ```powershell
 .\manage.ps1 status-all
@@ -57,5 +99,6 @@ Use `manage.ps1` (English menu / CLI):
 ## Safety rules
 
 - Never run the same session locally and on GHA at once
-- Local/dev: `SESSION_NAME=dev_seen`, no `ACCOUNT_ID` or `ACCOUNT_ID=dev`
-- Production accounts only on their workflows
+- Local/dev only: `SESSION_NAME=dev_seen`
+- Production logins: GHA `login-account` only
+- Prefer dedicated promo accounts (not Elmira) for `/promo`

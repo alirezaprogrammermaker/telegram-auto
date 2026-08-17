@@ -57,6 +57,9 @@ class ChannelForwardModule(BaseModule):
         # Cross-DC / GHA latency can delay later album parts; 1.2s was too short
         # and caused single-photo publishes. Reconcile from history on flush too.
         self.album_wait = max(0.5, float(config.get("album_wait_seconds") or 2.5))
+        # Production-safe default: do not silently join channels from shared config.
+        # Admin /forward add still joins intentionally (passes auto_join=True there).
+        self.auto_join = bool(config.get("auto_join", False))
         self.catch_up_enabled = bool(config.get("catch_up_enabled", True))
         self.catch_up_limit = max(1, int(config.get("catch_up_limit") or 50))
         self.dry_run = bool(config.get("dry_run", False))
@@ -109,10 +112,10 @@ class ChannelForwardModule(BaseModule):
 
     async def start(self) -> None:
         if not self._route_defs:
-            raise ValueError(
-                "channel_forward.routes is empty — add routes with "
-                "`/forward add <source> <dest>`"
+            logger.warning(
+                "channel_forward: no routes — idle (add with /forward add)"
             )
+            return
 
         watch_entities: list[Any] = []
         self._all_resolved = []
@@ -124,6 +127,7 @@ class ChannelForwardModule(BaseModule):
                     self.client,
                     route,
                     default_mode=self.default_mode,
+                    auto_join=self.auto_join,
                 )
             except Exception as exc:
                 logger.error(

@@ -192,6 +192,7 @@ async def resolve_route(
     *,
     default_mode: str,
     progress: ProgressMessenger | None = None,
+    auto_join: bool = True,
 ) -> list[ResolvedRoute]:
     source_raw = route["source"]
     mode = str(route.get("forward_mode") or default_mode).lower()
@@ -206,6 +207,7 @@ async def resolve_route(
         source_raw,
         progress,
         label="مبدأ",
+        auto_join=auto_join,
     )
     from telethon.tl.types import Channel
 
@@ -231,7 +233,7 @@ async def resolve_route(
             client,
             dest_raw,
             progress,
-            auto_join=True,
+            auto_join=auto_join,
         )
         logger.info(
             "Destination %s post-check OK (%s)",

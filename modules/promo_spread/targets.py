@@ -40,26 +40,26 @@ def _stable_label(entity: Any, fallback: Any) -> str:
         return display_ref(fallback)
 
 
-async def _resolve_invite(client: TelegramClient, ref: Any) -> Any:
+async def _resolve_invite(client: TelegramClient, ref: Any, *, auto_join: bool = True) -> Any:
     """Join or resolve a private invite link (+hash / joinchat)."""
     inv = invite_hash(ref)
     if not inv:
         raise ValueError("invite hash missing")
 
-    try:
-        updates = await client(ImportChatInviteRequest(inv))
-        chats = getattr(updates, "chats", None) or []
-        if chats:
-            return chats[0]
-    except UserAlreadyParticipantError:
-        pass
-    except (InviteHashInvalidError, InviteHashExpiredError) as exc:
-        raise ValueError(f"لینک دعوت نامعتبر/منقضی است: `{display_ref(ref)}`") from exc
-    except FloodWaitError:
-        raise
-    except RPCError as exc:
-        # Fall through to CheckChatInvite for already-member / preview cases
-        logger.debug("ImportChatInvite soft-fail: %s", exc.__class__.__name__)
+    if auto_join:
+        try:
+            updates = await client(ImportChatInviteRequest(inv))
+            chats = getattr(updates, "chats", None) or []
+            if chats:
+                return chats[0]
+        except UserAlreadyParticipantError:
+            pass
+        except (InviteHashInvalidError, InviteHashExpiredError) as exc:
+            raise ValueError(f"لینک دعوت نامعتبر/منقضی است: `{display_ref(ref)}`") from exc
+        except FloodWaitError:
+            raise
+        except RPCError as exc:
+            logger.debug("ImportChatInvite soft-fail: %s", exc.__class__.__name__)
 
     try:
         checked = await client(CheckChatInviteRequest(inv))
@@ -73,7 +73,10 @@ async def _resolve_invite(client: TelegramClient, ref: Any) -> Any:
     if isinstance(checked, ChatInviteAlready):
         return checked.chat
     if isinstance(checked, ChatInvite):
-        # Not a member yet and import didn't return chats — try import once more
+        if not auto_join:
+            raise ValueError(
+                f"عضو `{display_ref(ref)}` نیستی و auto_join خاموش است"
+            )
         try:
             updates = await client(ImportChatInviteRequest(inv))
             chats = getattr(updates, "chats", None) or []
@@ -92,15 +95,20 @@ async def _resolve_invite(client: TelegramClient, ref: Any) -> Any:
     raise ValueError(f"پاسخ ناشناخته برای لینک دعوت: `{display_ref(ref)}`")
 
 
-async def resolve_entity(client: TelegramClient, ref: Any):
+async def resolve_entity(client: TelegramClient, ref: Any, *, auto_join: bool = True):
     if invite_hash(ref):
-        return await _resolve_invite(client, ref)
+        return await _resolve_invite(client, ref, auto_join=auto_join)
     normalized = normalize_ref(ref)
     return await client.get_entity(normalized)
 
 
-async def ensure_source_channel(client: TelegramClient, ref: Any) -> tuple[Any, str]:
-    entity = await resolve_entity(client, ref)
+async def ensure_source_channel(
+    client: TelegramClient,
+    ref: Any,
+    *,
+    auto_join: bool = True,
+) -> tuple[Any, str]:
+    entity = await resolve_entity(client, ref, auto_join=auto_join)
     if not isinstance(entity, Channel) or not bool(getattr(entity, "broadcast", False)):
         raise ValueError("منبع باید یک کانال (broadcast) باشد، نه گروه")
 
@@ -126,8 +134,13 @@ async def ensure_source_channel(client: TelegramClient, ref: Any) -> tuple[Any, 
     return entity, _stable_label(entity, ref)
 
 
-async def ensure_promo_group(client: TelegramClient, ref: Any) -> tuple[Any, str, int]:
-    entity = await resolve_entity(client, ref)
+async def ensure_promo_group(
+    client: TelegramClient,
+    ref: Any,
+    *,
+    auto_join: bool = True,
+) -> tuple[Any, str, int]:
+    entity = await resolve_entity(client, ref, auto_join=auto_join)
     label = _stable_label(entity, ref)
 
     if isinstance(entity, Channel):

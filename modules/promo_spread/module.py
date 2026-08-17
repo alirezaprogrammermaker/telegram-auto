@@ -52,6 +52,8 @@ class PromoSpreadModule(BaseModule):
             self.default_mode = "forward"
         self.route_defs = migrate_routes(config)
         self.album_wait = max(0.8, float(config.get("album_wait_seconds") or 2.5))
+        # Joining invite links on startup can surprise you; admin /promo add may still join.
+        self.auto_join = bool(config.get("auto_join", False))
         self.safety_cfg = SafetyConfig.from_dict(config.get("safety"))
         self.guard = SafetyGuard(self.safety_cfg)
         self.queue = PromoQueue()
@@ -81,7 +83,9 @@ class PromoSpreadModule(BaseModule):
                 logger.warning("promo route %s has no groups — skipped", source)
                 continue
             try:
-                source_entity, src_label = await ensure_source_channel(self.client, source)
+                source_entity, src_label = await ensure_source_channel(
+                    self.client, source, auto_join=self.auto_join
+                )
             except Exception as exc:
                 logger.error("promo source skip %s: %s", source, exc)
                 continue
@@ -89,7 +93,9 @@ class PromoSpreadModule(BaseModule):
             resolved_groups: list[tuple[Any, str, int]] = []
             for ref in groups:
                 try:
-                    entity, label, gid = await ensure_promo_group(self.client, ref)
+                    entity, label, gid = await ensure_promo_group(
+                        self.client, ref, auto_join=self.auto_join
+                    )
                     resolved_groups.append((entity, label, gid))
                     self._group_entities[gid] = entity
                     logger.info("promo %s → group %s", src_label, label)
@@ -111,7 +117,6 @@ class PromoSpreadModule(BaseModule):
                 mode=mode,
                 paused=bool(raw.get("paused", False)),
             )
-            # Telethon chat_id for channels is usually -100xxxxxxxxxx
             chat_key = self._chat_key(source_entity)
             self._routes_by_source[chat_key] = route
             if source_entity not in watch:
@@ -125,17 +130,19 @@ class PromoSpreadModule(BaseModule):
             )
 
         if not self._routes_by_source:
-            raise ValueError("هیچ مسیر promo معتبری resolve نشد")
+            logger.warning("promo_spread: no valid routes — idle")
+            return
 
         self._builder = events.NewMessage(chats=watch)
         self.client.add_event_handler(self._on_new_message, self._builder)
         self._stopping = False
         self._worker = asyncio.create_task(self._worker_loop())
         logger.info(
-            "promo_spread watching %s source(s); dry_run=%s global_paused=%s",
+            "promo_spread watching %s source(s); dry_run=%s global_paused=%s auto_join=%s",
             len(self._routes_by_source),
             self.dry_run,
             self.global_paused,
+            self.auto_join,
         )
 
     def _chat_key(self, entity: Any) -> int:

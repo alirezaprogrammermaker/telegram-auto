@@ -10,10 +10,12 @@
 
 .EXAMPLE
   .\manage.ps1
-  .\manage.ps1 status-all
+  .\manage.ps1 account-add -Account promo2 -Role promo
+  .\manage.ps1 login-setup
+  .\manage.ps1 login-send -Account promo2 -Phone +98912... -Yes
+  .\manage.ps1 login-otp
+  .\manage.ps1 login-complete -Account promo2 -Yes
   .\manage.ps1 gha-restart -Account elmira -Yes
-  .\manage.ps1 gha-restart-all -Yes
-  .\manage.ps1 start-local
 #>
 
 [CmdletBinding()]
@@ -25,6 +27,9 @@ param(
         "status",
         "status-all",
         "accounts",
+        "account-add",
+        "account-enable",
+        "account-disable",
         "start-local",
         "stop-local",
         "logs",
@@ -35,6 +40,12 @@ param(
         "gha-dispatch",
         "gha-restart",
         "gha-restart-all",
+        "login-setup",
+        "login-send",
+        "login-otp",
+        "login-2fa",
+        "login-complete",
+        "login-cleanup",
         "git-status",
         "git-push",
         "open-actions",
@@ -44,6 +55,10 @@ param(
     [string]$Command = "",
 
     [string]$Account = "",
+    [string]$Phone = "",
+    [ValidateSet("", "promo", "forward", "full")]
+    [string]$Role = "",
+    [string]$Label = "",
     [int]$Tail = 60,
     [string]$RunId = "",
     [switch]$Yes
@@ -83,6 +98,46 @@ function Get-SessionName {
 
 function Test-GhAvailable {
     try { $null = Get-Command gh -ErrorAction Stop; return $true } catch { return $false }
+}
+
+function Test-RepoSecretsToken {
+    if (-not (Test-GhAvailable)) { return $false }
+    try {
+        $names = gh secret list --json name --jq ".[].name" 2>$null
+    } catch {
+        return $false
+    }
+    if (-not $names) { return $false }
+    foreach ($n in ($names -split "`n")) {
+        if ($n.Trim() -eq "REPO_SECRETS_TOKEN") { return $true }
+    }
+    return $false
+}
+
+function Wait-GhaRun {
+    param([string]$Workflow)
+    Start-Sleep -Seconds 5
+    $json = gh run list --workflow=$Workflow --limit 1 --json databaseId,status,conclusion,url | ConvertFrom-Json
+    if (-not $json) {
+        Write-Warn "No run found yet for $Workflow"
+        return $null
+    }
+    $run = if ($json -is [System.Array]) { $json[0] } else { $json }
+    Write-Info "Watching run $($run.databaseId) -> $($run.url)"
+    gh run watch $run.databaseId --exit-status
+    if ($LASTEXITCODE -ne 0) {
+        Write-Err "Workflow failed. Recent failed log lines:"
+        gh run view $run.databaseId --log-failed 2>$null | Select-Object -Last 80
+        return $null
+    }
+    Write-Ok "Workflow finished OK ($($run.databaseId))"
+    return $run
+}
+
+function Set-AccountEnabled([string]$id, [bool]$enabled) {
+    $flag = if ($enabled) { "true" } else { "false" }
+    python scripts/set_account_enabled.py $id --enabled $flag
+    if ($LASTEXITCODE -ne 0) { throw "Failed to update enabled flag for $id" }
 }
 
 function Get-AccountRegistry {
@@ -209,7 +264,7 @@ function Start-LocalApp {
         Write-Ok "Local started (PID $($procs[0].ProcessId))"
         Write-Info "Logs: .\manage.ps1 logs"
     } else {
-        Write-Warn "Process not seen — check logs\app.log"
+        Write-Warn "Process not seen - check logs\app.log"
         if (Test-Path $LogFile) { Get-Content $LogFile -Tail 30 }
     }
 }
@@ -342,6 +397,186 @@ function Invoke-GhaRestartAll {
     }
 }
 
+function Invoke-AccountAdd {
+    Write-Banner
+    $id = $Account
+    if (-not $id) { $id = Read-Host "New account id (e.g. promo2)" }
+    if (-not $id) { Write-Err "Account id required"; return }
+    $role = $Role
+    if (-not $role) {
+        $role = Read-Host "Role: promo / forward / full (default promo)"
+        if (-not $role) { $role = "promo" }
+    }
+    $argsList = @("scripts/scaffold_account.py", $id, "--role", $role)
+    if ($Label) { $argsList += @("--label", $Label) }
+    Write-Info "Scaffolding account $id (role=$role)..."
+    & python @argsList
+    if ($LASTEXITCODE -ne 0) { Write-Err "scaffold failed"; return }
+    Write-Ok "Account files created"
+    Write-Warn "Commit + push to master BEFORE login-send (workflow must exist on GitHub)."
+    Write-Host "Next:"
+    Write-Host "  .\manage.ps1 git-push -Yes"
+    Write-Host "  .\manage.ps1 login-setup"
+    Write-Host "  .\manage.ps1 login-send -Account $id -Phone +98... -Yes"
+}
+
+function Invoke-AccountEnable {
+    Write-Banner
+    $acc = Get-AccountOrDefault $Account
+    if (-not $Yes) {
+        $ans = Read-Host "Enable $($acc.id) in config/accounts.json? (y/N)"
+        if ($ans -notmatch '^[yY]') { Write-Info "Cancelled"; return }
+    }
+    Set-AccountEnabled $acc.id $true
+    Write-Ok "$($acc.id) enabled locally"
+    Write-Warn "Push to master so GHA honors enabled=true"
+}
+
+function Invoke-AccountDisable {
+    Write-Banner
+    $acc = Get-AccountOrDefault $Account
+    if (-not $Yes) {
+        $ans = Read-Host "Disable $($acc.id) in config/accounts.json? (y/N)"
+        if ($ans -notmatch '^[yY]') { Write-Info "Cancelled"; return }
+    }
+    Set-AccountEnabled $acc.id $false
+    Write-Ok "$($acc.id) disabled locally"
+    Write-Warn "Push to master so GHA skips this account"
+}
+
+function Invoke-LoginSetup {
+    Write-Banner
+    if (-not (Test-GhAvailable)) { Write-Err "gh not found"; return }
+    Write-Host "--- Login prerequisites ---" -ForegroundColor White
+    Write-Info "Production logins must run on GHA (runner IP), never on home PC."
+    if (Test-RepoSecretsToken) {
+        Write-Ok "REPO_SECRETS_TOKEN secret exists"
+    } else {
+        Write-Err "REPO_SECRETS_TOKEN missing"
+        Write-Host ""
+        Write-Host "Create a GitHub PAT that can WRITE repository secrets:"
+        Write-Host "  Classic: repo scope"
+        Write-Host "  Fine-grained: Repository permissions -> Secrets -> Read and write"
+        Write-Host ""
+        Write-Host "Then:"
+        Write-Host "  gh secret set REPO_SECRETS_TOKEN"
+        if (-not $Yes) {
+            $ans = Read-Host "Open browser to create a PAT now? (y/N)"
+            if ($ans -match '^[yY]') {
+                Start-Process "https://github.com/settings/tokens?type=beta"
+            }
+        }
+    }
+    Write-Host ""
+    Write-Info "Full flow:"
+    Write-Host "  1) .\manage.ps1 account-add -Account promo2 -Role promo"
+    Write-Host "  2) commit/push"
+    Write-Host "  3) .\manage.ps1 login-send -Account promo2 -Phone +98... -Yes"
+    Write-Host "  4) .\manage.ps1 login-otp"
+    Write-Host "  5) .\manage.ps1 login-complete -Account promo2 -Yes"
+    Write-Host "  6) .\manage.ps1 login-cleanup"
+    Write-Host "  7) .\manage.ps1 account-enable -Account promo2 + push"
+    Write-Host "  8) .\manage.ps1 gha-dispatch -Account promo2"
+}
+
+function Invoke-LoginSend {
+    Write-Banner
+    if (-not (Test-GhAvailable)) { Write-Err "gh not found"; return }
+    $acc = Get-AccountOrDefault $Account
+    if (-not (Test-RepoSecretsToken)) {
+        Write-Warn "REPO_SECRETS_TOKEN missing - complete step will need it (.\manage.ps1 login-setup)"
+    }
+    $phone = $Phone
+    if (-not $phone) { $phone = Read-Host "Phone with country code (e.g. +98912...)" }
+    if (-not $phone) { Write-Err "Phone required"; return }
+    if ($phone -notmatch '^\+\d{8,15}$') {
+        Write-Warn "Phone should look like +98912... (E.164). Continuing anyway."
+    }
+    Write-Info "Storing LOGIN_PHONE as a repo secret (not a public workflow input)..."
+    $phone | gh secret set LOGIN_PHONE
+    if ($LASTEXITCODE -ne 0) { Write-Err "Failed to set LOGIN_PHONE"; return }
+    Write-Info "Dispatching login-account send for $($acc.id) on GHA runner IP..."
+    gh workflow run login-account.yml --ref master `
+        -f action=send `
+        -f account_id=$($acc.id)
+    if ($LASTEXITCODE -ne 0) { Write-Err "workflow dispatch failed"; return }
+    Write-Ok "OTP send requested for $($acc.id)"
+    $run = Wait-GhaRun -Workflow "login-account.yml"
+    if (-not $run) { return }
+    Write-Host ""
+    Write-Info "Next steps:"
+    Write-Host "  1) Read Telegram OTP for that phone"
+    Write-Host "  2) .\manage.ps1 login-otp"
+    Write-Host "  3) (if 2FA) .\manage.ps1 login-2fa"
+    Write-Host "  4) .\manage.ps1 login-complete -Account $($acc.id) -Yes"
+}
+
+function Invoke-LoginOtp {
+    Write-Banner
+    if (-not (Test-GhAvailable)) { Write-Err "gh not found"; return }
+    $code = Read-Host "Telegram OTP code"
+    if (-not $code) { Write-Err "OTP required"; return }
+    $code = ($code -replace '\s', '')
+    $code | gh secret set LOGIN_OTP
+    if ($LASTEXITCODE -ne 0) { Write-Err "Failed to set LOGIN_OTP"; return }
+    Write-Ok "LOGIN_OTP secret set"
+    Write-Info "If account has cloud password: .\manage.ps1 login-2fa"
+    Write-Info "Then: .\manage.ps1 login-complete -Account <id> -Yes"
+}
+
+function Invoke-Login2fa {
+    Write-Banner
+    if (-not (Test-GhAvailable)) { Write-Err "gh not found"; return }
+    $secure = Read-Host "Telegram 2FA / cloud password" -AsSecureString
+    if (-not $secure) { Write-Err "Password required"; return }
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try {
+        $plain = [Runtime.InteropServices.Marshal]::PtrToStringAuto($bstr)
+    } finally {
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    }
+    if (-not $plain) { Write-Err "Password required"; return }
+    $plain | gh secret set LOGIN_2FA
+    $plain = $null
+    if ($LASTEXITCODE -ne 0) { Write-Err "Failed to set LOGIN_2FA"; return }
+    Write-Ok "LOGIN_2FA secret set"
+}
+
+function Invoke-LoginComplete {
+    Write-Banner
+    if (-not (Test-GhAvailable)) { Write-Err "gh not found"; return }
+    $acc = Get-AccountOrDefault $Account
+    if (-not (Test-RepoSecretsToken)) {
+        Write-Err "REPO_SECRETS_TOKEN missing - run .\manage.ps1 login-setup"
+        return
+    }
+    Write-Warn "LOGIN_OTP must already be set (.\manage.ps1 login-otp)"
+    if (-not $Yes) {
+        $ans = Read-Host "Run complete login for $($acc.id) on GHA? (y/N)"
+        if ($ans -notmatch '^[yY]') { Write-Info "Cancelled"; return }
+    }
+    gh workflow run login-account.yml --ref master `
+        -f action=complete `
+        -f account_id=$($acc.id)
+    if ($LASTEXITCODE -ne 0) { Write-Err "workflow dispatch failed"; return }
+    Write-Ok "Complete login requested for $($acc.id)"
+    $run = Wait-GhaRun -Workflow "login-account.yml"
+    if (-not $run) { return }
+    Write-Ok "Session secret $($acc.session_secret) should now be set"
+    Write-Info "Cleanup temp secrets: .\manage.ps1 login-cleanup"
+    Write-Info "Enable + push, then: .\manage.ps1 gha-dispatch -Account $($acc.id)"
+}
+
+function Invoke-LoginCleanup {
+    Write-Banner
+    if (-not (Test-GhAvailable)) { Write-Err "gh not found"; return }
+    foreach ($name in @("LOGIN_OTP", "LOGIN_2FA", "LOGIN_PHONE")) {
+        Write-Info "Deleting secret $name (ok if missing)..."
+        gh secret delete $name --yes 2>$null | Out-Null
+    }
+    Write-Ok "Temp login secrets cleared (or were already absent)"
+}
+
 function Show-GitStatus {
     Write-Banner
     git status -sb
@@ -356,7 +591,7 @@ function Invoke-GitPush {
     if (-not $ahead -or [int]$ahead -eq 0) {
         $dirty = git status --porcelain
         if (-not $dirty) { Write-Info "Nothing to push"; return }
-        Write-Warn "Uncommitted changes — commit first"
+        Write-Warn "Uncommitted changes - commit first"
         return
     }
     if (-not $Yes) {
@@ -385,21 +620,23 @@ Menu:  .\manage.ps1
 
 CLI:
   .\manage.ps1 accounts
-  .\manage.ps1 status
+  .\manage.ps1 account-add -Account promo2 -Role promo
+  .\manage.ps1 account-enable|-disable -Account promo2 -Yes
   .\manage.ps1 status-all
   .\manage.ps1 start-local | stop-local | logs [-Tail 100]
   .\manage.ps1 gha-list [-Account elmira]
-  .\manage.ps1 gha-list-all
-  .\manage.ps1 gha-logs [-Account elmira] [-RunId 123]
   .\manage.ps1 gha-restart -Account elmira -Yes
-  .\manage.ps1 gha-restart-all -Yes
-  .\manage.ps1 gha-dispatch -Account promo1
+  .\manage.ps1 login-setup
+  .\manage.ps1 login-send -Account promo1 -Phone +98912... -Yes
+  .\manage.ps1 login-otp
+  .\manage.ps1 login-2fa
+  .\manage.ps1 login-complete -Account promo1 -Yes
+  .\manage.ps1 login-cleanup
   .\manage.ps1 git-status | git-push [-Yes]
   .\manage.ps1 help
 
-Accounts live in config/accounts.json
-Docs: docs/multi-account.md
-
+Accounts: config/accounts.json
+Login (GHA IP only): docs/multi-account.md
 "@
 }
 
@@ -415,21 +652,25 @@ function Show-Menu {
         Write-Host "  1) Status (local + one account)" -ForegroundColor White
         Write-Host "  2) Status ALL accounts" -ForegroundColor White
         Write-Host "  3) List accounts registry" -ForegroundColor White
-        Write-Host "  4) Start local app" -ForegroundColor White
-        Write-Host "  5) Stop local app" -ForegroundColor White
-        Write-Host "  6) Local logs" -ForegroundColor White
+        Write-Host "  4) Add account (scaffold)" -ForegroundColor White
+        Write-Host "  5) Start local app" -ForegroundColor White
+        Write-Host "  6) Stop local app" -ForegroundColor White
+        Write-Host "  7) Local logs" -ForegroundColor White
         Write-Host ""
-        Write-Host "  7) GHA list (pick account)" -ForegroundColor White
-        Write-Host "  8) GHA logs (pick account)" -ForegroundColor White
-        Write-Host "  9) GHA restart ONE account" -ForegroundColor White
-        Write-Host " 10) GHA restart ALL enabled" -ForegroundColor White
-        Write-Host " 11) GHA cancel current (pick account)" -ForegroundColor White
-        Write-Host " 12) GHA dispatch only (pick account)" -ForegroundColor White
+        Write-Host "  8) GHA list (pick account)" -ForegroundColor White
+        Write-Host "  9) GHA logs (pick account)" -ForegroundColor White
+        Write-Host " 10) GHA restart ONE account" -ForegroundColor White
+        Write-Host " 11) GHA restart ALL enabled" -ForegroundColor White
+        Write-Host " 12) GHA cancel / dispatch" -ForegroundColor White
         Write-Host ""
-        Write-Host " 13) git status" -ForegroundColor White
-        Write-Host " 14) git push" -ForegroundColor White
-        Write-Host " 15) Open Actions / Repo" -ForegroundColor White
-        Write-Host " 16) Help" -ForegroundColor White
+        Write-Host " 13) Login SETUP (PAT check)" -ForegroundColor White
+        Write-Host " 14) Login SEND OTP on GHA" -ForegroundColor White
+        Write-Host " 15) Login set OTP / 2FA secrets" -ForegroundColor White
+        Write-Host " 16) Login COMPLETE on GHA" -ForegroundColor White
+        Write-Host " 17) Login cleanup temp secrets" -ForegroundColor White
+        Write-Host " 18) Enable / disable account" -ForegroundColor White
+        Write-Host " 19) git status / push" -ForegroundColor White
+        Write-Host " 20) Open Actions / Repo / Help" -ForegroundColor White
         Write-Host "  0) Exit" -ForegroundColor DarkGray
         Write-Host ""
         $choice = Read-Host "Enter number"
@@ -438,42 +679,67 @@ function Show-Menu {
             "1" { Show-Status; Pause-Menu }
             "2" { Show-StatusAll; Pause-Menu }
             "3" { Show-Accounts; Pause-Menu }
-            "4" { Start-LocalApp; Pause-Menu }
-            "5" { Stop-LocalApp; Pause-Menu }
-            "6" {
+            "4" { Invoke-AccountAdd; Pause-Menu }
+            "5" { Start-LocalApp; Pause-Menu }
+            "6" { Stop-LocalApp; Pause-Menu }
+            "7" {
                 $t = Read-Host "How many lines? (default $Tail)"
                 if ($t -match '^\d+$') { $script:Tail = [int]$t }
                 Show-LocalLogs; Pause-Menu
             }
-            "7" {
-                $script:Account = Read-Host "Account id (elmira/promo1, empty=default)"
+            "8" {
+                $script:Account = Read-Host "Account id (empty=default)"
                 Show-GhaList; Pause-Menu
             }
-            "8" {
-                $script:Account = Read-Host "Account id (elmira/promo1, empty=default)"
+            "9" {
+                $script:Account = Read-Host "Account id (empty=default)"
                 Show-GhaLogs; Pause-Menu
             }
-            "9" {
+            "10" {
                 $script:Account = Read-Host "Account id to restart"
                 Invoke-GhaRestart; Pause-Menu
             }
-            "10" { Invoke-GhaRestartAll; Pause-Menu }
-            "11" {
-                $script:Account = Read-Host "Account id"
-                Invoke-GhaCancel; Pause-Menu
-            }
+            "11" { Invoke-GhaRestartAll; Pause-Menu }
             "12" {
+                $sub = Read-Host "c=cancel / d=dispatch"
                 $script:Account = Read-Host "Account id"
-                Invoke-GhaDispatch; Pause-Menu
-            }
-            "13" { Show-GitStatus; Pause-Menu }
-            "14" { Invoke-GitPush; Pause-Menu }
-            "15" {
-                Open-ActionsPage
-                Open-RepoPage
+                if ($sub -eq "c") { Invoke-GhaCancel } else { Invoke-GhaDispatch }
                 Pause-Menu
             }
-            "16" { Show-Help; Pause-Menu }
+            "13" { Invoke-LoginSetup; Pause-Menu }
+            "14" {
+                $script:Account = Read-Host "Account id"
+                Invoke-LoginSend; Pause-Menu
+            }
+            "15" {
+                Invoke-LoginOtp
+                $need2fa = Read-Host "Also set 2FA password now? (y/N)"
+                if ($need2fa -match '^[yY]') { Invoke-Login2fa }
+                Pause-Menu
+            }
+            "16" {
+                $script:Account = Read-Host "Account id"
+                Invoke-LoginComplete; Pause-Menu
+            }
+            "17" { Invoke-LoginCleanup; Pause-Menu }
+            "18" {
+                $script:Account = Read-Host "Account id"
+                $ed = Read-Host "e=enable / d=disable"
+                if ($ed -eq "d") { Invoke-AccountDisable } else { Invoke-AccountEnable }
+                Pause-Menu
+            }
+            "19" {
+                $g = Read-Host "s=status / p=push"
+                if ($g -eq "p") { Invoke-GitPush } else { Show-GitStatus }
+                Pause-Menu
+            }
+            "20" {
+                $h = Read-Host "a=actions / r=repo / h=help"
+                if ($h -eq "a") { Open-ActionsPage }
+                elseif ($h -eq "r") { Open-RepoPage }
+                else { Show-Help }
+                Pause-Menu
+            }
             "0" { Write-Host "Bye."; return }
             default { Write-Warn "Invalid number"; Start-Sleep -Seconds 1 }
         }
@@ -487,23 +753,32 @@ if (-not $Command -or $Command -eq "menu") {
 }
 
 switch ($Command) {
-    "status"         { Show-Status }
-    "status-all"     { Show-StatusAll }
-    "accounts"       { Show-Accounts }
-    "start-local"    { Start-LocalApp }
-    "stop-local"     { Stop-LocalApp }
-    "logs"           { Show-LocalLogs }
-    "gha-list"       { Show-GhaList }
-    "gha-list-all"   { Show-GhaListAll }
-    "gha-logs"       { Show-GhaLogs }
-    "gha-cancel"     { Invoke-GhaCancel }
-    "gha-dispatch"   { Invoke-GhaDispatch }
-    "gha-restart"    { Invoke-GhaRestart }
-    "gha-restart-all"{ Invoke-GhaRestartAll }
-    "git-status"     { Show-GitStatus }
-    "git-push"       { Invoke-GitPush }
-    "open-actions"   { Open-ActionsPage }
-    "open-repo"      { Open-RepoPage }
-    "help"           { Show-Help }
-    default          { Show-Help }
+    "status"          { Show-Status }
+    "status-all"      { Show-StatusAll }
+    "accounts"        { Show-Accounts }
+    "account-add"     { Invoke-AccountAdd }
+    "account-enable"  { Invoke-AccountEnable }
+    "account-disable" { Invoke-AccountDisable }
+    "start-local"     { Start-LocalApp }
+    "stop-local"      { Stop-LocalApp }
+    "logs"            { Show-LocalLogs }
+    "gha-list"        { Show-GhaList }
+    "gha-list-all"    { Show-GhaListAll }
+    "gha-logs"        { Show-GhaLogs }
+    "gha-cancel"      { Invoke-GhaCancel }
+    "gha-dispatch"    { Invoke-GhaDispatch }
+    "gha-restart"     { Invoke-GhaRestart }
+    "gha-restart-all" { Invoke-GhaRestartAll }
+    "login-setup"     { Invoke-LoginSetup }
+    "login-send"      { Invoke-LoginSend }
+    "login-otp"       { Invoke-LoginOtp }
+    "login-2fa"       { Invoke-Login2fa }
+    "login-complete"  { Invoke-LoginComplete }
+    "login-cleanup"   { Invoke-LoginCleanup }
+    "git-status"      { Show-GitStatus }
+    "git-push"        { Invoke-GitPush }
+    "open-actions"    { Open-ActionsPage }
+    "open-repo"       { Open-RepoPage }
+    "help"            { Show-Help }
+    default           { Show-Help }
 }
