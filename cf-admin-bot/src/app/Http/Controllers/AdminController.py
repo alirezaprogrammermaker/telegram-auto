@@ -1,8 +1,11 @@
-"""Admin panel menu controller — no duplicated strings."""
+"""Admin panel menu controller — thin router over feature controllers."""
 from __future__ import annotations
 
 from app.Http.Controllers.AccountsController import AccountsController
+from app.Http.Controllers.OpsController import OpsController
+from app.Http.Controllers.PanelController import PanelController
 from app.Models.User import User
+from app.Models.UserState import UserState
 from app.Services.TelegramService import TelegramService
 from app.Support.Lang import __
 from config.bot import BotConfig
@@ -10,13 +13,16 @@ from config.menus import main_keyboard
 
 
 class AdminController:
-    def __init__(self, tg: TelegramService, config: BotConfig) -> None:
+    def __init__(self, tg: TelegramService, config: BotConfig, ctx=None) -> None:
         self.tg = tg
         self.config = config
         self.db = config.db
-        self.accounts = AccountsController(tg, config)
+        self.accounts = AccountsController(tg, config, ctx=ctx)
+        self.ops = OpsController(tg, config)
+        self.panel = PanelController(tg, config)
 
     async def welcome(self, chat_id: int, user: User) -> None:
+        await UserState.clear(self.db, int(user.get("telegram_id")))
         await self.tg.send_message(
             chat_id,
             __("auth.welcome_admin", name=user.display_name),
@@ -67,8 +73,12 @@ class AdminController:
     async def dispatch_text(self, chat_id: int, user: User, text: str) -> None:
         t = (text or "").strip()
 
-        # Accounts wizard / menu consumes the update when active or when opened.
+        # Feature wizards first (consume when active / entry buttons).
         if await self.accounts.handle(chat_id, user, t):
+            return
+        if await self.ops.handle(chat_id, user, t):
+            return
+        if await self.panel.handle(chat_id, user, t):
             return
 
         if t in {"/start", "start", "منو", "/menu"}:
@@ -80,18 +90,15 @@ class AdminController:
         if t in {__("menu.btn_settings"), "تنظیمات", "/admins", "⚙️ تنظیمات"}:
             await self.settings(chat_id)
             return
+        if t in {__("accounts.btn_back"), "منوی اصلی"}:
+            await self.welcome(chat_id, user)
+            return
+        if t == "/help":
+            await self.tg.send_message(
+                chat_id, __("menu.help"), reply_markup=main_keyboard()
+            )
+            return
 
-        mapping = {
-            __("menu.btn_status"): "menu.status",
-            "وضعیت": "menu.status",
-            __("menu.btn_discovery"): "menu.discovery",
-            "کشف": "menu.discovery",
-            __("menu.btn_promo"): "menu.promo",
-            "تبلیغ": "menu.promo",
-            __("menu.btn_ops"): "menu.ops",
-            "عملیات": "menu.ops",
-            "/help": "menu.help",
-        }
-        key = mapping.get(t)
-        body = __(key) if key else __("menu.unknown")
-        await self.tg.send_message(chat_id, body, reply_markup=main_keyboard())
+        await self.tg.send_message(
+            chat_id, __("menu.unknown"), reply_markup=main_keyboard()
+        )

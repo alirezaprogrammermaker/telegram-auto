@@ -196,6 +196,17 @@ class SafetyGuard:
             self._data["pause_reason"] = reason
             self._save()
         logger.warning("promo circuit OPEN for %.1fh: %s", hrs, reason)
+        try:
+            from app.control_plane_alert import post_admin_bot_alert
+            from app.paths import account_id as current_account_id
+
+            post_admin_bot_alert(
+                account_id=current_account_id(),
+                message=f"promo circuit OPEN ({hrs:.1f}h): {reason}",
+                severity="critical",
+            )
+        except Exception:
+            logger.debug("control-plane alert skipped", exc_info=True)
 
     def note_flood_wait(self, seconds: int) -> None:
         with self._lock:

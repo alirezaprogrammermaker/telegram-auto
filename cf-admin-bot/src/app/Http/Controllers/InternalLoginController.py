@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlparse
 
 from app.Services.GitHubService import GitHubService
 from app.Services.LoginOrchestratorService import LoginOrchestratorService
-from app.Support.Lang import __
+from app.Support.BridgeAuth import require_bridge_token
 from config.bot import BotConfig
 from workers import Response
 
@@ -15,20 +15,9 @@ class InternalLoginController:
         self.config = BotConfig(env)
 
     async def handle(self, request, account_id: str) -> Response:
-        expected = self.config.bridge_token
-        if not expected:
-            return Response.json(
-                {"ok": False, "error": "bridge_disabled"}, status=503
-            )
-
-        auth = request.headers.get("Authorization") or ""
-        token = ""
-        if auth.lower().startswith("bearer "):
-            token = auth[7:].strip()
-        if token != expected:
-            return Response.json(
-                {"ok": False, "error": __("error.unauthorized")}, status=401
-            )
+        denied = require_bridge_token(request, self.config)
+        if denied is not None:
+            return denied
 
         url = urlparse(request.url)
         qs = parse_qs(url.query or "")

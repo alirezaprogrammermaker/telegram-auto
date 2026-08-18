@@ -73,6 +73,15 @@ jobs:
             data-${{ github.repository }}-${{ inputs.account_id }}-
             data-${{ github.repository }}-
 
+      - name: Restore shared group pool
+        uses: actions/cache@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1-${{ github.run_id }}
+          restore-keys: |
+            pool-${{ github.repository }}-v1-
+            pool-${{ github.repository }}-
+
       - name: Prepare session + data
         id: prep
         env:
@@ -96,6 +105,8 @@ jobs:
           LOG_LEVEL: INFO
           MAX_RUNTIME_SECONDS: ${{ inputs.max_runtime_seconds }}
           FLOOD_SLEEP_THRESHOLD: "120"
+          ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
         run: python3 main.py
 
       - name: Skipped (no session secret)

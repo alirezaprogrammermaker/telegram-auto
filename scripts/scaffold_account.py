@@ -46,6 +46,8 @@ def profile_modules(role: str) -> dict:
                 "auto_join": False,
                 "routes": [],
             },
+            "link_harvest": {"enabled": False},
+            "group_inspect": {"enabled": False},
         }
     if role == "forward":
         return {
@@ -53,6 +55,41 @@ def profile_modules(role: str) -> dict:
             "channel_forward": {"enabled": True, "auto_join": False, "routes": []},
             "digest": {"enabled": True},
             "promo_spread": {"enabled": False},
+            "link_harvest": {"enabled": False},
+            "group_inspect": {"enabled": False},
+        }
+    if role == "collector":
+        return {
+            "auto_reply": {"enabled": True},
+            "channel_forward": {"enabled": False},
+            "digest": {"enabled": False},
+            "promo_spread": {"enabled": False},
+            "link_harvest": {
+                "enabled": True,
+                "paused": False,
+                "join_directories": True,
+                "catch_up_limit": 40,
+                "directories": [],
+            },
+            "group_inspect": {"enabled": False},
+        }
+    if role == "inspector":
+        return {
+            "auto_reply": {"enabled": True},
+            "channel_forward": {"enabled": False},
+            "digest": {"enabled": False},
+            "promo_spread": {"enabled": False},
+            "link_harvest": {"enabled": False},
+            "group_inspect": {
+                "enabled": True,
+                "dry_run": True,
+                "paused": False,
+                "daily_join_budget": 4,
+                "delay_min_seconds": 1800,
+                "delay_max_seconds": 10800,
+                "leave_after": True,
+                "timezone": "Asia/Tehran",
+            },
         }
     # full
     return {
@@ -67,6 +104,8 @@ def profile_modules(role: str) -> dict:
             "auto_join": False,
             "routes": [],
         },
+        "link_harvest": {"enabled": False},
+        "group_inspect": {"enabled": False},
     }
 
 
@@ -111,7 +150,7 @@ def main() -> int:
     parser.add_argument("account_id", help="lowercase id, e.g. promo2")
     parser.add_argument(
         "--role",
-        choices=["promo", "forward", "full"],
+        choices=["promo", "forward", "full", "collector", "inspector"],
         default="promo",
         help="Module profile template",
     )

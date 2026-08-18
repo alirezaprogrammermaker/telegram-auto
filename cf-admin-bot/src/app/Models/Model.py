@@ -105,6 +105,18 @@ class QueryBuilder:
         sql = f"INSERT INTO {table} ({cols}) VALUES ({placeholders})"
         await self.db.prepare(sql).bind(*values.values()).run()
 
+    async def delete(self) -> None:
+        if not self._wheres:
+            raise ValueError("Refusing DELETE without WHERE")
+        table = self.model_cls.table
+        params: list[Any] = []
+        clauses = []
+        for col, val in self._wheres:
+            clauses.append(f"{col} = ?")
+            params.append(val)
+        sql = f"DELETE FROM {table} WHERE " + " AND ".join(clauses)
+        await self.db.prepare(sql).bind(*params).run()
+
 
 class Model:
     table: str = ""

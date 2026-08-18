@@ -1,0 +1,130 @@
+# Read/mutate shared group pool in Actions cache and report to admin-bot bridge.
+
+name: pool-admin
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "status | list | approve | reject"
+        required: true
+        type: string
+        default: "status"
+      status_filter:
+        description: "For list: raw | inspected_ok | approved | rejected (optional)"
+        required: false
+        type: string
+        default: ""
+      ref:
+        description: "Group ref for approve/reject"
+        required: false
+        type: string
+        default: ""
+      limit:
+        description: "List limit"
+        required: false
+        type: string
+        default: "20"
+      notify_user_id:
+        description: "Telegram user id to notify via admin-bot"
+        required: false
+        type: string
+        default: ""
+      notify_chat_id:
+        description: "Telegram chat id to notify via admin-bot"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  pool:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore shared group pool
+        uses: actions/cache/restore@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1-${{ github.run_id }}
+          restore-keys: |
+            pool-${{ github.repository }}-v1-
+            pool-${{ github.repository }}-
+
+      - name: Install deps
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade --quiet pip
+          python3 -m pip install --quiet -r requirements.txt
+
+      - name: Run pool admin
+        id: admin
+        env:
+          ACTION: ${{ inputs.action }}
+          STATUS_FILTER: ${{ inputs.status_filter }}
+          REF: ${{ inputs.ref }}
+          LIMIT: ${{ inputs.limit }}
+        run: |
+          set -euo pipefail
+          mkdir -p data/pool
+          ARGS=(--action "$ACTION" --json-out pool_result.json --limit "${LIMIT:-20}")
+          if [ -n "${STATUS_FILTER:-}" ]; then
+            ARGS+=(--status "$STATUS_FILTER")
+          fi
+          if [ -n "${REF:-}" ]; then
+            ARGS+=(--ref "$REF")
+          fi
+          python3 scripts/pool_admin.py "${ARGS[@]}"
+
+      - name: Save shared group pool
+        if: inputs.action == 'approve' || inputs.action == 'reject'
+        uses: actions/cache/save@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1-${{ github.run_id }}
+
+      - name: Report to admin-bot bridge
+        if: always() && inputs.notify_user_id != ''
+        env:
+          BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+          NOTIFY_USER_ID: ${{ inputs.notify_user_id }}
+          NOTIFY_CHAT_ID: ${{ inputs.notify_chat_id }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BRIDGE_URL:-}" ] || [ -z "${BRIDGE_TOKEN:-}" ]; then
+            echo "bridge secrets missing — skip report"
+            exit 0
+          fi
+          python3 <<'PY'
+          import json, os, urllib.request
+          path = "pool_result.json"
+          try:
+              payload = json.loads(open(path, encoding="utf-8").read())
+          except Exception as exc:
+              payload = {"ok": False, "error": f"missing_result: {exc}"}
+          payload["notify_user_id"] = os.environ.get("NOTIFY_USER_ID") or ""
+          payload["notify_chat_id"] = os.environ.get("NOTIFY_CHAT_ID") or ""
+          payload["run_id"] = os.environ.get("RUN_ID")
+          payload["run_url"] = os.environ.get("RUN_URL")
+          body = json.dumps(payload).encode("utf-8")
+          url = os.environ["BRIDGE_URL"].rstrip("/") + "/internal/pool/report"
+          req = urllib.request.Request(
+              url,
+              data=body,
+              method="POST",
+              headers={
+                  "Authorization": f"Bearer {os.environ['BRIDGE_TOKEN']}",
+                  "Content-Type": "application/json",
+              },
+          )
+          with urllib.request.urlopen(req, timeout=30) as resp:
+              print(resp.read().decode("utf-8", errors="replace"))
+          PY

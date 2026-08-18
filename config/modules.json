@@ -100,6 +100,23 @@
       "source": null,
       "groups": [],
       "auto_join": false
+    },
+    "link_harvest": {
+      "enabled": false,
+      "paused": false,
+      "join_directories": true,
+      "catch_up_limit": 40,
+      "directories": []
+    },
+    "group_inspect": {
+      "enabled": false,
+      "dry_run": true,
+      "paused": false,
+      "daily_join_budget": 4,
+      "delay_min_seconds": 1800,
+      "delay_max_seconds": 10800,
+      "leave_after": true,
+      "timezone": "Asia/Tehran"
     }
   }
 }

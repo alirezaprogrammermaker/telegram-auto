@@ -1,0 +1,133 @@
+# Merge per-account raw_links.jsonl into shared data/pool/group_pool.json.
+# Pool + raw harvest logs live in Actions caches (not git), so this workflow
+# restores each account cache, gathers artifacts, merges, then saves the pool.
+
+name: merge-group-pool
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  list-accounts:
+    runs-on: ubuntu-latest
+    outputs:
+      accounts: ${{ steps.ids.outputs.accounts }}
+      empty: ${{ steps.ids.outputs.empty }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Read account ids
+        id: ids
+        run: |
+          python3 <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("config/accounts.json")
+          ids = []
+          if path.is_file():
+              data = json.loads(path.read_text(encoding="utf-8"))
+              rows = data.get("accounts") if isinstance(data, dict) else None
+              if isinstance(rows, list):
+                  ids = [
+                      str(a["id"])
+                      for a in rows
+                      if isinstance(a, dict) and a.get("id")
+                  ]
+          empty = "true" if not ids else "false"
+          # Matrix cannot be empty — placeholder filtered by job if.
+          payload = ids if ids else ["__none__"]
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a", encoding="utf-8") as fh:
+              fh.write(f"empty={empty}\n")
+              fh.write(f"accounts={json.dumps(payload)}\n")
+          print(json.dumps({"empty": empty == "true", "accounts": ids}, indent=2))
+          PY
+
+  gather:
+    needs: list-accounts
+    if: needs.list-accounts.outputs.empty != 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        account: ${{ fromJson(needs.list-accounts.outputs.accounts) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Restore account data cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/${{ matrix.account }}
+          key: data-${{ github.repository }}-${{ matrix.account }}-v1
+          restore-keys: |
+            data-${{ github.repository }}-${{ matrix.account }}-
+            data-${{ github.repository }}-
+
+      - name: Upload raw_links (if present)
+        uses: actions/upload-artifact@v4
+        with:
+          name: raw-${{ matrix.account }}
+          path: data/${{ matrix.account }}/raw_links.jsonl
+          if-no-files-found: ignore
+          retention-days: 1
+
+  merge:
+    needs: [list-accounts, gather]
+    if: always() && needs.list-accounts.outputs.empty != 'true' && needs.gather.result != 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore shared group pool
+        uses: actions/cache/restore@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1-${{ github.run_id }}
+          restore-keys: |
+            pool-${{ github.repository }}-v1-
+            pool-${{ github.repository }}-
+
+      - name: Download harvest artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: _artifacts
+          merge-multiple: false
+
+      - name: Layout data/*/raw_links.jsonl
+        run: |
+          set -euo pipefail
+          mkdir -p data
+          if [ -d _artifacts ]; then
+            for dir in _artifacts/raw-*; do
+              [ -d "$dir" ] || continue
+              aid="${dir#_artifacts/raw-}"
+              mkdir -p "data/${aid}"
+              if [ -f "${dir}/raw_links.jsonl" ]; then
+                cp "${dir}/raw_links.jsonl" "data/${aid}/raw_links.jsonl"
+              elif [ -f "${dir}/data/${aid}/raw_links.jsonl" ]; then
+                cp "${dir}/data/${aid}/raw_links.jsonl" "data/${aid}/raw_links.jsonl"
+              fi
+            done
+          fi
+          find data -name 'raw_links.jsonl' -print || true
+
+      - name: Install deps
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade --quiet pip
+          python3 -m pip install --quiet -r requirements.txt
+
+      - name: Merge into group pool
+        run: python3 scripts/merge_group_pool.py
+
+      - name: Save shared group pool
+        uses: actions/cache/save@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1-${{ github.run_id }}

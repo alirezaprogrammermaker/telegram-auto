@@ -18,6 +18,8 @@ MODULE_REGISTRY: dict[str, str] = {
     "channel_forward": "modules.channel_forward.module:ChannelForwardModule",
     "digest": "modules.digest.module:DigestModule",
     "promo_spread": "modules.promo_spread.module:PromoSpreadModule",
+    "link_harvest": "modules.link_harvest.module:LinkHarvestModule",
+    "group_inspect": "modules.group_inspect.module:GroupInspectModule",
 }
 
 

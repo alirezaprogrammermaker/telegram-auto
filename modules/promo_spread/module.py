@@ -325,7 +325,9 @@ class PromoSpreadModule(BaseModule):
         entity = self._group_entities.get(group_id)
         if entity is None:
             try:
-                entity, group_ref, group_id = await ensure_promo_group(self.client, group_ref)
+                entity, group_ref, group_id = await ensure_promo_group(
+                    self.client, group_ref, auto_join=False
+                )
                 self._group_entities[group_id] = entity
             except Exception as exc:
                 self.queue.mark_failed(item_id, str(exc), retry=False)
@@ -422,3 +424,14 @@ class PromoSpreadModule(BaseModule):
                 ids.add(int(part.strip()))
         if ids:
             await notify_admins(self.client, ids, text)
+        try:
+            from app.control_plane_alert import post_admin_bot_alert
+            from app.paths import account_id as current_account_id
+
+            post_admin_bot_alert(
+                account_id=current_account_id(),
+                message=text,
+                severity="warning",
+            )
+        except Exception:
+            pass

@@ -5,16 +5,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from app.Models.Model import Model
+from app.Support.Time import utc_now, utc_now_iso
 
 SESSION_TTL_MINUTES = 30
-
-
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc).replace(microsecond=0)
-
-
-def utc_now_iso() -> str:
-    return utc_now().isoformat()
 
 
 def mask_phone(phone: str | None) -> str:

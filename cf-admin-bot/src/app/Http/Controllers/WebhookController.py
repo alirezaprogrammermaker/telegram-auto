@@ -14,10 +14,11 @@ from workers import Response
 
 
 class WebhookController:
-    def __init__(self, env) -> None:
+    def __init__(self, env, ctx=None) -> None:
         self.config = BotConfig(env)
         self.auth = AuthService(self.config)
         self.tg = TelegramService(self.config.telegram_token)
+        self.ctx = ctx
 
     async def handle(self, request) -> Response:
         if not self.config.telegram_token:
@@ -80,7 +81,7 @@ class WebhookController:
             return
 
         guest = GuestController(self.tg)
-        admin = AdminController(self.tg, self.config)
+        admin = AdminController(self.tg, self.config, ctx=self.ctx)
 
         if not user.is_admin:
             t = text.strip()

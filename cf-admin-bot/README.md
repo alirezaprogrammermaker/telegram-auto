@@ -70,12 +70,18 @@ gh secret set ADMIN_BOT_BRIDGE_TOKEN   # same value as Worker BRIDGE_TOKEN
 # REPO_SECRETS_TOKEN
 ```
 
-## Users (D1)
+## Users & accounts (D1)
 
 - DB: `telegram-admin-db` → `env.DB`
-- Tables: `users`, `accounts`, `login_sessions`, `user_states`
-- Message bot → upsert `role=user`
-- Send correct `ADMIN_PASSWORD` → `role=admin`
+- `users` — Telegram identities (`role=user|admin`)
+- `accounts` — **owned** automation identities (`user_id` = owner telegram id)
+  - Each admin only lists/manages **their own** rows
+  - `phone_e164` is unique (no duplicate numbers)
+  - Rich fields: role, session secret name, workflow, status, last_login_at, …
+- `login_sessions` / `user_states` — wizard state (ephemeral secrets)
+
+Message bot → upsert `users.role=user`  
+Send correct `ADMIN_PASSWORD` → `role=admin` (still only sees own accounts)
 
 ## Deploy (Windows-friendly)
 
@@ -90,4 +96,20 @@ npx wrangler d1 migrations apply telegram-admin-db --remote
 ## Main keyboard
 
 Labels come from `lang/fa/messages.py` (`menu.btn_*`).
-Accounts submenu: list / add / login existing / cancel.
+
+| Menu | What it does |
+|------|----------------|
+| اکانت‌ها | list / add / login / manage (enable·disable·rename·role·logout·delete) |
+| عملیات | GHA dispatch / cancel / restart / merge-group-pool |
+| وضعیت | owned accounts + latest workflow run |
+| کشف | pool status/list/approve/reject + inspect/harvest profile toggles |
+| تبلیغ | dry_run / pause / mode on promo profile |
+| تنظیمات | admin list |
+
+Bridge endpoints (Bearer `BRIDGE_TOKEN`):
+
+- `GET /internal/login/<id>?action=send|complete`
+- `POST /internal/pool/report` — GHA pool-admin result → Telegram
+- `POST /internal/alerts` — FloodWait/circuit from runners → account owner
+
+

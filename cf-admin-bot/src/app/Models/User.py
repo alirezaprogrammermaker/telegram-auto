@@ -1,13 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any
-
 from app.Models.Model import Model
-
-
-def utc_now() -> str:
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+from app.Support.Time import utc_now_iso
 
 
 class User(Model):
@@ -69,7 +63,7 @@ class User(Model):
         first_name: str | None,
         last_name: str | None,
     ) -> "User":
-        now = utc_now()
+        now = utc_now_iso()
         existing = await cls.find(db, telegram_id)
         if existing:
             await cls.query(db).where("telegram_id", telegram_id).update(
@@ -104,7 +98,7 @@ class User(Model):
         )
 
     async def promote_to_admin(self, db) -> "User":
-        now = utc_now()
+        now = utc_now_iso()
         tid = int(self.get("telegram_id"))
         await self.query(db).where("telegram_id", tid).update(
             {"role": "admin", "updated_at": now, "last_seen_at": now}

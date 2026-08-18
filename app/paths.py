@@ -50,7 +50,28 @@ def runtime_modules_path() -> Path:
     return data_path("modules.runtime.json")
 
 
+def pool_dir() -> Path:
+    """Shared discovery pool (not per-account). Override with GROUP_POOL_DIR."""
+    override = (os.environ.get("GROUP_POOL_DIR") or "").strip()
+    if override:
+        path = Path(override)
+        if not path.is_absolute():
+            path = ROOT / path
+        return path
+    return ROOT / "data" / "pool"
+
+
+def pool_path(*parts: str) -> Path:
+    return pool_dir().joinpath(*parts)
+
+
 def ensure_data_dir() -> Path:
     path = data_dir()
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def ensure_pool_dir() -> Path:
+    path = pool_dir()
     path.mkdir(parents=True, exist_ok=True)
     return path

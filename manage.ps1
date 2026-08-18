@@ -56,7 +56,7 @@ param(
 
     [string]$Account = "",
     [string]$Phone = "",
-    [ValidateSet("", "promo", "forward", "full")]
+    [ValidateSet("", "promo", "forward", "full", "collector", "inspector")]
     [string]$Role = "",
     [string]$Label = "",
     [int]$Tail = 60,
@@ -406,7 +406,7 @@ function Invoke-AccountAdd {
     if (-not $id) { Write-Err "Account id required"; return }
     $role = $Role
     if (-not $role) {
-        $role = Read-Host "Role: promo / forward / full (default promo)"
+        $role = Read-Host "Role: promo / forward / collector / inspector / full (default promo)"
         if (-not $role) { $role = "promo" }
     }
     $argsList = @("scripts/scaffold_account.py", $id, "--role", $role)
@@ -623,6 +623,8 @@ Menu:  .\manage.ps1
 CLI:
   .\manage.ps1 accounts
   .\manage.ps1 account-add -Account promo2 -Role promo
+  .\manage.ps1 account-add -Account collector1 -Role collector
+  .\manage.ps1 account-add -Account inspector1 -Role inspector
   .\manage.ps1 account-enable|-disable -Account promo2 -Yes
   .\manage.ps1 status-all
   .\manage.ps1 start-local | stop-local | logs [-Tail 100]

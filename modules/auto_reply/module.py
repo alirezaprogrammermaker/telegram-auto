@@ -155,6 +155,9 @@ class AutoReplyModule(BaseModule):
             ("/promo group add|remove @channel @group", "گروه یک مسیر"),
             ("/promo dryrun|pause|resume|queue", "ایمنی و صف پخش"),
             ("/promo safety delay|budget|windows", "تنظیم فاصله/سقف/بازه"),
+            ("/harvest status|add|remove", "جمع‌آوری لینک از لینکدونی (collector)"),
+            ("/inspect status|dryrun|budget", "بازرسی آهسته گروه (inspector)"),
+            ("/pool status|list|approve|to-promo", "استخر مشترک کشف گروه"),
             (self.logout_command, "خروج از حالت مدیر"),
             ("/login", "راهنمای ورود دوباره"),
             ("/login <رمز>", "ورود مدیر با رمز"),
@@ -216,6 +219,9 @@ class AutoReplyModule(BaseModule):
 
         if cmd == "/promo":
             return "__PROMO_PROGRESS__"
+
+        if cmd in {"/harvest", "/inspect", "/pool"}:
+            return "__POOL_PROGRESS__"
 
         return None
 
@@ -548,6 +554,38 @@ class AutoReplyModule(BaseModule):
             safety_summary=guard.summary_lines(),
             queue_pending=PromoQueue().pending_count(),
         )
+
+    async def _handle_pool_family_command(
+        self,
+        parts: list[str],
+        progress: ProgressMessenger,
+    ) -> None:
+        runtime = self._runtime()
+        if runtime is None:
+            await progress.fail("runtime unavailable")
+            return
+        from modules.group_pool.admin_commands import (
+            handle_harvest_command,
+            handle_inspect_command,
+            handle_pool_command,
+        )
+
+        cmd = (parts[0] if parts else "").lower()
+        if cmd == "/harvest":
+            cfg = runtime.modules_config.setdefault("link_harvest", {})
+            if not isinstance(cfg, dict):
+                cfg = {}
+                runtime.modules_config["link_harvest"] = cfg
+            await handle_harvest_command(parts, cfg=cfg, runtime=runtime, progress=progress)
+            return
+        if cmd == "/inspect":
+            cfg = runtime.modules_config.setdefault("group_inspect", {})
+            if not isinstance(cfg, dict):
+                cfg = {}
+                runtime.modules_config["group_inspect"] = cfg
+            await handle_inspect_command(parts, cfg=cfg, runtime=runtime, progress=progress)
+            return
+        await handle_pool_command(parts, runtime=runtime, progress=progress)
 
     async def _handle_config_command(
         self,
@@ -1186,6 +1224,16 @@ class AutoReplyModule(BaseModule):
                 await self._handle_promo_command(text.split(), progress)
             except Exception as exc:
                 logger.exception("promo command failed")
+                await progress.fail(str(exc))
+            return
+
+        if cmd in {"/harvest", "/inspect", "/pool"}:
+            progress = ProgressMessenger(event)
+            await progress.start("⏳ …")
+            try:
+                await self._handle_pool_family_command(text.split(), progress)
+            except Exception as exc:
+                logger.exception("%s command failed", cmd)
                 await progress.fail(str(exc))
             return
 
