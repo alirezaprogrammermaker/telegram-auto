@@ -1,0 +1,106 @@
+# Per-account Actions cache admin (queues / safety dumps) → report to admin-bot.
+
+name: account-cache-admin
+
+on:
+  workflow_dispatch:
+    inputs:
+      account_id:
+        description: "Account id (data/<id> cache)"
+        required: true
+        type: string
+      action:
+        description: "promo_queue_status|promo_queue_clear|forward_queue_status|forward_queue_clear|promo_safety_dump|inspect_state_dump|stats_dump"
+        required: true
+        type: string
+      notify_user_id:
+        required: false
+        type: string
+        default: ""
+      notify_chat_id:
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  cache-admin:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore account data cache
+        uses: actions/cache/restore@v4
+        with:
+          path: data/${{ inputs.account_id }}
+          key: data-${{ github.repository }}-${{ inputs.account_id }}-v1
+          restore-keys: |
+            data-${{ github.repository }}-${{ inputs.account_id }}-
+            data-${{ github.repository }}-
+
+      - name: Install deps
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade --quiet pip
+          python3 -m pip install --quiet -r requirements.txt
+
+      - name: Run cache admin
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          DATA_DIR: data/${{ inputs.account_id }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          set -euo pipefail
+          mkdir -p "data/${ACCOUNT_ID}"
+          python3 scripts/account_cache_admin.py --action "$ACTION" --json-out cache_result.json
+
+      - name: Save account data cache
+        if: contains(inputs.action, 'clear')
+        uses: actions/cache/save@v4
+        with:
+          path: data/${{ inputs.account_id }}
+          key: data-${{ github.repository }}-${{ inputs.account_id }}-v1-${{ github.run_id }}
+
+      - name: Report to admin-bot
+        if: always() && inputs.notify_user_id != ''
+        env:
+          BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+          NOTIFY_USER_ID: ${{ inputs.notify_user_id }}
+          NOTIFY_CHAT_ID: ${{ inputs.notify_chat_id }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BRIDGE_URL:-}" ] || [ -z "${BRIDGE_TOKEN:-}" ]; then
+            echo "bridge secrets missing — skip report"
+            exit 0
+          fi
+          python3 <<'PY'
+          import json, os, urllib.request
+          try:
+              payload = json.loads(open("cache_result.json", encoding="utf-8").read())
+          except Exception as exc:
+              payload = {"ok": False, "error": f"missing_result: {exc}"}
+          payload["notify_user_id"] = os.environ.get("NOTIFY_USER_ID") or ""
+          payload["notify_chat_id"] = os.environ.get("NOTIFY_CHAT_ID") or ""
+          payload["run_id"] = os.environ.get("RUN_ID")
+          payload["run_url"] = os.environ.get("RUN_URL")
+          body = json.dumps(payload).encode("utf-8")
+          url = os.environ["BRIDGE_URL"].rstrip("/") + "/internal/cache/report"
+          req = urllib.request.Request(
+              url,
+              data=body,
+              method="POST",
+              headers={
+                  "Authorization": f"Bearer {os.environ['BRIDGE_TOKEN']}",
+                  "Content-Type": "application/json",
+              },
+          )
+          with urllib.request.urlopen(req, timeout=30) as resp:
+              print(resp.read().decode("utf-8", errors="replace"))
+          PY

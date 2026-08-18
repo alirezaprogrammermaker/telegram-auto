@@ -1,6 +1,7 @@
 from urllib.parse import urlparse
 
 from app.Http.Controllers.InternalAlertsController import InternalAlertsController
+from app.Http.Controllers.InternalCacheController import InternalCacheController
 from app.Http.Controllers.InternalLoginController import InternalLoginController
 from app.Http.Controllers.InternalPoolController import InternalPoolController
 from app.Http.Controllers.WebhookController import WebhookController
@@ -38,6 +39,9 @@ class Default(WorkerEntrypoint):
 
         if path == "/internal/pool/report" and method == "POST":
             return await InternalPoolController(self.env).handle(request)
+
+        if path == "/internal/cache/report" and method == "POST":
+            return await InternalCacheController(self.env).handle(request)
 
         if path == "/internal/alerts" and method == "POST":
             return await InternalAlertsController(self.env).handle(request)

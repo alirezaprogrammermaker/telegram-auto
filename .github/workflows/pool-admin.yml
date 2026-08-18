@@ -35,6 +35,21 @@ on:
         required: false
         type: string
         default: ""
+      intent:
+        description: "Optional: to_promo"
+        required: false
+        type: string
+        default: ""
+      promo_account_id:
+        description: "For to_promo intent"
+        required: false
+        type: string
+        default: ""
+      source_channel:
+        description: "For to_promo intent"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -95,6 +110,9 @@ jobs:
           BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
           NOTIFY_USER_ID: ${{ inputs.notify_user_id }}
           NOTIFY_CHAT_ID: ${{ inputs.notify_chat_id }}
+          INTENT: ${{ inputs.intent }}
+          PROMO_ACCOUNT_ID: ${{ inputs.promo_account_id }}
+          SOURCE_CHANNEL: ${{ inputs.source_channel }}
           RUN_ID: ${{ github.run_id }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
@@ -114,6 +132,9 @@ jobs:
           payload["notify_chat_id"] = os.environ.get("NOTIFY_CHAT_ID") or ""
           payload["run_id"] = os.environ.get("RUN_ID")
           payload["run_url"] = os.environ.get("RUN_URL")
+          payload["intent"] = os.environ.get("INTENT") or ""
+          payload["promo_account_id"] = os.environ.get("PROMO_ACCOUNT_ID") or ""
+          payload["source_channel"] = os.environ.get("SOURCE_CHANNEL") or ""
           body = json.dumps(payload).encode("utf-8")
           url = os.environ["BRIDGE_URL"].rstrip("/") + "/internal/pool/report"
           req = urllib.request.Request(

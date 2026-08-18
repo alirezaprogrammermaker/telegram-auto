@@ -10,6 +10,7 @@ from app.Services.GitHubService import GitHubError, GitHubService
 
 MERGE_POOL_WORKFLOW = "merge-group-pool.yml"
 POOL_ADMIN_WORKFLOW = "pool-admin.yml"
+ACCOUNT_CACHE_ADMIN_WORKFLOW = "account-cache-admin.yml"
 
 
 class RunOrchestratorService:
@@ -136,9 +137,12 @@ class RunOrchestratorService:
         status_filter: str = "",
         ref: str = "",
         limit: int = 20,
+        intent: str = "",
+        promo_account_id: str = "",
+        source_channel: str = "",
     ) -> dict[str, Any]:
         action = (action or "").strip().lower()
-        if action not in {"status", "list", "approve", "reject"}:
+        if action not in {"status", "list", "approve", "reject", "get"}:
             raise GitHubError(f"bad pool action: {action}")
         inputs: dict[str, str] = {
             "action": action,
@@ -150,6 +154,12 @@ class RunOrchestratorService:
             inputs["status_filter"] = status_filter
         if ref:
             inputs["ref"] = ref
+        if intent:
+            inputs["intent"] = intent
+        if promo_account_id:
+            inputs["promo_account_id"] = promo_account_id
+        if source_channel:
+            inputs["source_channel"] = source_channel
         started = time.time()
         await self.github.dispatch_workflow(POOL_ADMIN_WORKFLOW, inputs)
         run = await self.github.wait_for_workflow_run(
@@ -158,5 +168,44 @@ class RunOrchestratorService:
         return {
             "action": action,
             "workflow": POOL_ADMIN_WORKFLOW,
+            **self._run_view(run),
+        }
+
+    async def account_cache_admin(
+        self,
+        user_id: int,
+        account_id: str,
+        *,
+        action: str,
+        notify_chat_id: int | None = None,
+    ) -> dict[str, Any]:
+        await self.accounts.require_owned(user_id, account_id)
+        action = (action or "").strip()
+        allowed = {
+            "promo_queue_status",
+            "promo_queue_clear",
+            "forward_queue_status",
+            "forward_queue_clear",
+            "promo_safety_dump",
+            "inspect_state_dump",
+            "stats_dump",
+        }
+        if action not in allowed:
+            raise GitHubError(f"bad cache action: {action}")
+        inputs = {
+            "account_id": account_id,
+            "action": action,
+            "notify_user_id": str(int(user_id)),
+            "notify_chat_id": str(int(notify_chat_id or user_id)),
+        }
+        started = time.time()
+        await self.github.dispatch_workflow(ACCOUNT_CACHE_ADMIN_WORKFLOW, inputs)
+        run = await self.github.wait_for_workflow_run(
+            ACCOUNT_CACHE_ADMIN_WORKFLOW, not_before_epoch=started
+        )
+        return {
+            "action": action,
+            "account_id": account_id,
+            "workflow": ACCOUNT_CACHE_ADMIN_WORKFLOW,
             **self._run_view(run),
         }

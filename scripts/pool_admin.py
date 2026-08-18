@@ -24,7 +24,7 @@ def main() -> int:
     parser.add_argument(
         "--action",
         required=True,
-        choices=["status", "list", "approve", "reject"],
+        choices=["status", "list", "approve", "reject", "get"],
     )
     parser.add_argument("--status", default="", help="Filter for list (raw/ok/…)")
     parser.add_argument("--ref", default="", help="Group ref for approve/reject")
@@ -41,6 +41,29 @@ def main() -> int:
     result: dict = {"ok": True, "action": args.action}
 
     if args.action == "status":
+        result["counts"] = pool.counts()
+    elif args.action == "get":
+        ref = (args.ref or "").strip()
+        if not ref:
+            result = {"ok": False, "error": "missing_ref", "action": "get"}
+            _emit(result, args.json_out)
+            return 1
+        item = pool.get(ref)
+        if not item:
+            # try normalize via set lookup
+            from modules.group_pool.pool import normalize_group_ref
+
+            item = pool.get(normalize_group_ref(ref) or ref)
+        result["item"] = (
+            {
+                "ref": (item or {}).get("ref"),
+                "status": (item or {}).get("status"),
+                "title": (item or {}).get("title"),
+            }
+            if item
+            else None
+        )
+        result["found"] = bool(item)
         result["counts"] = pool.counts()
     elif args.action == "list":
         status = (args.status or "").strip() or None

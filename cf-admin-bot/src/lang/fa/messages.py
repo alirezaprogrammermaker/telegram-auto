@@ -12,8 +12,8 @@ MESSAGES: dict[str, str] = {
     "auth.welcome_admin": (
         "✅ سلام <b>{name}</b> — نقش: <code>admin</code>\n"
         "────────────\n"
-        "از منوی پایین یک بخش را انتخاب کن.\n"
-        "اکانت‌های Telethon لازم نیست این ربات را استارت کنند."
+        "از منوی پایین همهٔ اکانت‌ها و نقش‌ها را مدیریت کن.\n"
+        "لازم نیست به PV اکانت‌های Telethon پیام بدهی."
     ),
     "auth.promoted": "✅ رمز درست بود. نقش تو الان <b>admin</b> است.",
     "auth.denied": "🔒 دسترسی ندارید.\nبرای مدیر شدن، رمز مدیر را بفرستید.",
@@ -331,53 +331,95 @@ MESSAGES: dict[str, str] = {
     "discovery.empty": "هنوز اکانت collector/inspector مال تو ثبت نشده.",
     "discovery.help": (
         "────────────\n"
-        "Pool و تنظیمات پروفایل از همینجا؛ جوین/اسکن زنده روی رانر.\n"
-        "تغییر پروفایل از <b>ران بعدی</b> اثر دارد (در صورت نیاز ریستارت)."
+        "همهٔ کنترل کشف/pool/inspect/harvest از همین ربات است.\n"
+        "دیگر لازم نیست به PV اکانت‌ها پیام بدهی.\n"
+        "تغییر پروفایل از ران بعدی اثر دارد (در صورت نیاز ریستارت)."
     ),
     "discovery.help_full": (
         "🧺 <b>راهنمای کشف</b>\n"
         "────────────\n"
-        "از ربات: pool وضعیت/لیست/تأیید/رد · inspect dry_run/pause/budget · harvest pause/add\n"
-        "روی Telethon هنوز: اسکن زنده و جوین واقعی.\n"
-        "ادغام rawها: عملیات → ادغام pool."
+        "Pool: وضعیت/لیست/تأیید/رد/to-promo\n"
+        "Inspect: dry_run، pause، بودجه، dump\n"
+        "Harvest: pause، لینکدونی add/remove، catchup\n"
+        "ادغام raw: عملیات → ادغام pool"
     ),
     "discovery.btn_refresh": "🔄 تازه‌سازی کشف",
     "discovery.btn_help": "📖 راهنمای کشف",
+    "discovery.btn_profile_status": "📄 وضعیت پروفایل",
     "discovery.btn_pool_status": "📦 وضعیت pool",
     "discovery.btn_pool_list": "📋 لیست raw",
+    "discovery.btn_pool_list_ok": "📋 لیست ok",
+    "discovery.btn_pool_list_approved": "📋 لیست approved",
     "discovery.btn_pool_approve": "✅ تأیید گروه",
     "discovery.btn_pool_reject": "🗑 رد گروه",
+    "discovery.btn_to_promo": "📣 to-promo",
     "discovery.btn_inspect_dry": "🔎 dry_run inspect",
     "discovery.btn_inspect_pause": "⏸ pause inspect",
     "discovery.btn_inspect_resume": "▶️ resume inspect",
     "discovery.btn_inspect_budget": "🔢 بودجه inspect",
+    "discovery.btn_inspect_dump": "🛡 dump inspect",
     "discovery.btn_harvest_pause": "⏸ pause harvest",
     "discovery.btn_harvest_resume": "▶️ resume harvest",
     "discovery.btn_harvest_add": "➕ لینکدونی",
+    "discovery.btn_harvest_remove": "➖ حذف لینکدونی",
+    "discovery.btn_harvest_catchup": "⏫ catchup",
     "discovery.no_role_account": "اکانت مناسب این نقش نداری.",
     "discovery.ask_budget": "بودجه روزانه جوین را بفرست (۱ تا ۱۲):",
     "discovery.invalid_budget": "عدد نامعتبر — بین ۱ تا ۱۲.",
     "discovery.ask_directory": "لینکدونی را بفرست (مثل <code>@Link4you</code>):",
+    "discovery.ask_catchup": "عدد catch_up را بفرست (۰ تا ۲۰۰):",
+    "discovery.ask_to_promo_source": "کانال منبع promo را بفرست (مثل <code>@mychannel</code>):",
+    "discovery.ask_to_promo_ref": "رفرنس گروه approved را بفرست:",
     "promo.header": "📣 <b>تبلیغ — promo</b>\n────────────",
     "promo.empty": "هنوز اکانت promo مال تو ثبت نشده.",
     "promo.help": (
         "────────────\n"
-        "dry_run / pause / mode از پروفایل GitHub.\n"
-        "ارسال واقعی فقط روی رانر؛ صف زنده هنوز Telethon."
+        "مسیرها، dry_run، صف و safety از همین ربات.\n"
+        "ارسال واقعی روی رانر؛ بعد از تغییر پروفایل در صورت نیاز ریستارت کن."
     ),
     "promo.help_full": (
         "📣 <b>راهنمای تبلیغ</b>\n"
         "────────────\n"
-        "از ربات: dry_run، pause/resume، mode forward|copy\n"
-        "روی اکانت: <code>/promo queue|add|group|…</code> برای صف و مسیرهای زنده."
+        "از ربات: وضعیت پروفایل، dry_run، pause، mode، add/remove مسیر، "
+        "group add، صف، safety dump، to-promo از منوی کشف.\n"
+        "دیگر لازم نیست به PV اکانت promo پیام بدهی."
     ),
     "promo.btn_refresh": "🔄 تازه‌سازی تبلیغ",
     "promo.btn_help": "📖 راهنمای تبلیغ",
+    "promo.btn_profile_status": "📄 وضعیت مسیرها",
     "promo.btn_dry": "🧪 dry_run",
     "promo.btn_pause": "⏸ pause promo",
     "promo.btn_resume": "▶️ resume promo",
     "promo.btn_mode_forward": "mode: forward",
     "promo.btn_mode_copy": "mode: copy",
+    "promo.btn_route_add": "➕ مسیر",
+    "promo.btn_route_remove": "➖ حذف مسیر",
+    "promo.btn_group_add": "➕ گروه به مسیر",
+    "promo.btn_route_pause": "⏸ pause مسیر",
+    "promo.btn_queue_status": "📥 وضعیت صف",
+    "promo.btn_queue_clear": "🧹 پاک کردن صف",
+    "promo.btn_safety_dump": "🛡 safety dump",
+    "promo.ask_route_add": (
+        "فرمت:\n"
+        "<code>@channel @g1,@g2</code>\n"
+        "یک خط بفرست."
+    ),
+    "promo.ask_route_source": "منبع مسیر را بفرست (<code>@channel</code>):",
+    "promo.ask_group_add": (
+        "فرمت:\n"
+        "<code>@channel @group</code>"
+    ),
+    "promo.profile_status": (
+        "📣 <code>{account_id}</code>\n"
+        "dry_run=<code>{dry_run}</code> paused=<code>{paused}</code> "
+        "mode=<code>{mode}</code>\n"
+        "routes={route_count}\n"
+        "{routes}"
+    ),
+    "discovery.profile_status": (
+        "📄 <code>{account_id}</code> / <code>{module}</code>\n"
+        "<code>{detail}</code>"
+    ),
     "panel.pick_account": "اکانت را انتخاب کن:",
     "panel.cancelled": "لغو شد.",
     "profile.patch_done": (
@@ -415,6 +457,43 @@ MESSAGES: dict[str, str] = {
         "{url}"
     ),
     "pool.report_generic": "pool {action} تمام شد.\n{url}",
+    "pool.report_get": (
+        "🔍 pool get: <code>{ref}</code>\n"
+        "status=<code>{status}</code> title={title}\n"
+        "{url}"
+    ),
+    "pool.report_get_missing": "گروه در pool پیدا نشد.\n{url}",
+    "pool.to_promo_blocked": (
+        "⛔ to-promo انجام نشد — وضعیت باید approved باشد "
+        "(فعلی: <code>{status}</code>)."
+    ),
+    "pool.to_promo_missing_fields": "دادهٔ to-promo ناقص بود.",
+    "pool.to_promo_done": (
+        "✅ to-promo: <code>{source}</code> → <code>{ref}</code> "
+        "روی اکانت <code>{account_id}</code>"
+    ),
+    "cache.working": "⏳ در حال «{action}» روی کش اکانت...",
+    "cache.dispatched": (
+        "✅ cache «{action}» برای <code>{account_id}</code>\n"
+        "run=<code>{run_id}</code>\n"
+        "{url}"
+    ),
+    "cache.report_error": (
+        "❌ cache {action} / <code>{account_id}</code>: {error}\n{url}"
+    ),
+    "cache.queue_status": (
+        "📥 صف <code>{queue}</code> / <code>{account_id}</code>\n"
+        "pending=<code>{pending}</code>\n{url}"
+    ),
+    "cache.queue_cleared": (
+        "🧹 صف <code>{queue}</code> / <code>{account_id}</code> "
+        "پاک شد ({cleared})\n{url}"
+    ),
+    "cache.dump": (
+        "🛡 <code>{account_id}</code> / {action}\n"
+        "exists=<code>{exists}</code>\n"
+        "<code>{preview}</code>\n{url}"
+    ),
     "alerts.flood": (
         "🚨 <b>هشدار اکانت</b> <code>{account_id}</code> [{severity}]\n"
         "{message}"

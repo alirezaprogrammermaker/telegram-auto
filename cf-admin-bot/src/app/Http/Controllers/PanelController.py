@@ -1,6 +1,8 @@
 """Status / Discovery / Promo panels — profile toggles + pool GHA ops."""
 from __future__ import annotations
 
+import json
+
 from app.Models.User import User
 from app.Models.UserState import UserState
 from app.Services.AccountScaffoldService import validate_account_id
@@ -26,7 +28,19 @@ ST_DISC_APPROVE = "discovery_approve_ref"
 ST_DISC_REJECT = "discovery_reject_ref"
 ST_DISC_BUDGET = "discovery_budget"
 ST_DISC_DIR = "discovery_add_dir"
+ST_DISC_DIR_REMOVE = "discovery_remove_dir"
+ST_DISC_CATCHUP = "discovery_catchup"
+ST_DISC_TO_PROMO_PICK = "discovery_to_promo_pick"
+ST_DISC_TO_PROMO_SOURCE = "discovery_to_promo_source"
+ST_DISC_TO_PROMO_REF = "discovery_to_promo_ref"
 ST_PROMO_PICK = "promo_pick"
+ST_PROMO_ROUTE_ADD = "promo_route_add"
+ST_PROMO_ROUTE_SOURCE = "promo_route_source"
+ST_PROMO_GROUP_ADD = "promo_group_add"
+
+DISCOVERY_PICK_ROLES = ("collector", "inspector", "full")
+PROMO_PICK_ROLES = ("promo", "full")
+CANCEL_TEXTS = frozenset({"/cancel", "انصراف"})
 
 
 class PanelController:
@@ -50,7 +64,8 @@ class PanelController:
             return None
         return RunOrchestratorService(self.db, gh)
 
-    def _format_lines(self, snap: dict, *, empty_key: str) -> str:
+    @staticmethod
+    def _format_lines(snap: dict, *, empty_key: str) -> str:
         accounts = snap.get("accounts") or []
         if not accounts:
             return __(empty_key)
@@ -73,6 +88,64 @@ class PanelController:
                 )
             )
         return "\n".join(lines)
+
+    @staticmethod
+    def _format_module_detail(desc: dict) -> str:
+        module = str(desc.get("module") or "")
+        if module == "link_harvest":
+            dirs = ", ".join(desc.get("directories") or []) or "—"
+            return (
+                f"paused={desc.get('paused')} "
+                f"catch_up={desc.get('catch_up_limit')}\n"
+                f"dirs: {dirs}"
+            )
+        if module == "group_inspect":
+            return (
+                f"paused={desc.get('paused')} "
+                f"dry_run={desc.get('dry_run')} "
+                f"budget={desc.get('daily_join_budget')}"
+            )
+        return json.dumps(desc, ensure_ascii=False)[:300]
+
+    @staticmethod
+    def _format_routes(routes: list) -> str:
+        lines: list[str] = []
+        for route in routes:
+            if not isinstance(route, dict):
+                continue
+            src = route.get("source") or "?"
+            groups = ", ".join(route.get("groups") or []) or "—"
+            flags: list[str] = []
+            if route.get("paused"):
+                flags.append("paused")
+            if not route.get("enabled", True):
+                flags.append("off")
+            suffix = f" [{','.join(flags)}]" if flags else ""
+            lines.append(f"• {src}: {groups}{suffix}")
+        return "\n".join(lines) if lines else "—"
+
+    @staticmethod
+    def _parse_route_line(text: str) -> tuple[str, str]:
+        parts = (text or "").strip().split(None, 1)
+        if len(parts) < 2:
+            raise GitHubError("need source and groups")
+        return parts[0], parts[1]
+
+    @staticmethod
+    def _parse_group_line(text: str) -> tuple[str, str]:
+        parts = (text or "").strip().split(None, 1)
+        if len(parts) < 2:
+            raise GitHubError("need source and group")
+        return parts[0], parts[1]
+
+    @staticmethod
+    def _is_bad_ref(text: str) -> bool:
+        t = (text or "").strip()
+        return (
+            not t
+            or t.startswith("/")
+            or t in {__("accounts.btn_cancel"), __("accounts.btn_back")}
+        )
 
     async def show_status(self, chat_id: int, user: User) -> None:
         tid = int(user.get("telegram_id"))
@@ -124,9 +197,8 @@ class PanelController:
         t = (text or "").strip()
         current = str(state.get("state") or "")
 
-        if t in {"/cancel", __("accounts.btn_cancel"), "انصراف"} and current.startswith(
-            ("discovery_", "promo_")
-        ):
+        cancel_set = CANCEL_TEXTS | {__("accounts.btn_cancel")}
+        if t in cancel_set and current.startswith(("discovery_", "promo_")):
             await UserState.clear(self.db, tid)
             await self.tg.send_message(
                 chat_id, __("panel.cancelled"), reply_markup=main_keyboard()
@@ -134,10 +206,7 @@ class PanelController:
             return True
 
         if current == ST_DISC_PICK:
-            await self._finish_pick(chat_id, user, t)
-            return True
-        if current == ST_PROMO_PICK:
-            await self._finish_promo_pick(chat_id, user, t)
+            await self._finish_disc_pick(chat_id, user, t)
             return True
         if current == ST_DISC_APPROVE:
             await self._pool_mutate(chat_id, user, t, action="approve")
@@ -150,6 +219,33 @@ class PanelController:
             return True
         if current == ST_DISC_DIR:
             await self._add_dir(chat_id, user, t)
+            return True
+        if current == ST_DISC_DIR_REMOVE:
+            await self._remove_dir(chat_id, user, t)
+            return True
+        if current == ST_DISC_CATCHUP:
+            await self._set_catchup(chat_id, user, t)
+            return True
+        if current == ST_DISC_TO_PROMO_PICK:
+            await self._finish_to_promo_pick(chat_id, user, t)
+            return True
+        if current == ST_DISC_TO_PROMO_SOURCE:
+            await self._finish_to_promo_source(chat_id, user, t)
+            return True
+        if current == ST_DISC_TO_PROMO_REF:
+            await self._finish_to_promo_ref(chat_id, user, t)
+            return True
+        if current == ST_PROMO_PICK:
+            await self._finish_promo_pick(chat_id, user, t)
+            return True
+        if current == ST_PROMO_ROUTE_ADD:
+            await self._finish_route_add(chat_id, user, t)
+            return True
+        if current == ST_PROMO_ROUTE_SOURCE:
+            await self._finish_route_source(chat_id, user, t)
+            return True
+        if current == ST_PROMO_GROUP_ADD:
+            await self._finish_group_add(chat_id, user, t)
             return True
 
         if t in {__("menu.btn_status"), "وضعیت", "📊 وضعیت", __("status.btn_refresh")}:
@@ -169,16 +265,20 @@ class PanelController:
 
         if t == __("discovery.btn_help"):
             await self.tg.send_message(
-                chat_id, __("discovery.help_full"), reply_markup=discovery_menu_keyboard()
+                chat_id,
+                __("discovery.help_full"),
+                reply_markup=discovery_menu_keyboard(),
             )
             return True
         if t == __("promo.btn_help"):
             await self.tg.send_message(
-                chat_id, __("promo.help_full"), reply_markup=promo_menu_keyboard()
+                chat_id,
+                __("promo.help_full"),
+                reply_markup=promo_menu_keyboard(),
             )
             return True
 
-        # Discovery pool ops
+        # Discovery pool
         if t == __("discovery.btn_pool_status"):
             await self._dispatch_pool(chat_id, user, action="status")
             return True
@@ -187,57 +287,97 @@ class PanelController:
                 chat_id, user, action="list", status_filter="raw"
             )
             return True
+        if t == __("discovery.btn_pool_list_ok"):
+            await self._dispatch_pool(
+                chat_id, user, action="list", status_filter="inspected_ok"
+            )
+            return True
+        if t == __("discovery.btn_pool_list_approved"):
+            await self._dispatch_pool(
+                chat_id, user, action="list", status_filter="approved"
+            )
+            return True
         if t == __("discovery.btn_pool_approve"):
             await UserState.set_state(self.db, tid, ST_DISC_APPROVE, {})
             await self.tg.send_message(
-                chat_id, __("pool.ask_ref_approve"), reply_markup=discovery_menu_keyboard()
+                chat_id,
+                __("pool.ask_ref_approve"),
+                reply_markup=discovery_menu_keyboard(),
             )
             return True
         if t == __("discovery.btn_pool_reject"):
             await UserState.set_state(self.db, tid, ST_DISC_REJECT, {})
             await self.tg.send_message(
-                chat_id, __("pool.ask_ref_reject"), reply_markup=discovery_menu_keyboard()
+                chat_id,
+                __("pool.ask_ref_reject"),
+                reply_markup=discovery_menu_keyboard(),
             )
             return True
+        if t == __("discovery.btn_to_promo"):
+            await self._start_to_promo(chat_id, user)
+            return True
 
-        # Discovery profile ops (need account pick)
+        # Discovery profile
+        if t == __("discovery.btn_profile_status"):
+            await self._start_disc_pick(
+                chat_id, user, roles=DISCOVERY_PICK_ROLES, intent="profile_status"
+            )
+            return True
         if t == __("discovery.btn_inspect_dry"):
-            await self._start_pick(
+            await self._start_disc_pick(
                 chat_id, user, roles=("inspector", "full"), intent="inspect_dry"
             )
             return True
         if t == __("discovery.btn_inspect_pause"):
-            await self._start_pick(
+            await self._start_disc_pick(
                 chat_id, user, roles=("inspector", "full"), intent="inspect_pause"
             )
             return True
         if t == __("discovery.btn_inspect_resume"):
-            await self._start_pick(
+            await self._start_disc_pick(
                 chat_id, user, roles=("inspector", "full"), intent="inspect_resume"
             )
             return True
         if t == __("discovery.btn_inspect_budget"):
-            await self._start_pick(
+            await self._start_disc_pick(
                 chat_id, user, roles=("inspector", "full"), intent="inspect_budget"
             )
             return True
+        if t == __("discovery.btn_inspect_dump"):
+            await self._start_disc_pick(
+                chat_id, user, roles=("inspector", "full"), intent="inspect_dump"
+            )
+            return True
         if t == __("discovery.btn_harvest_pause"):
-            await self._start_pick(
+            await self._start_disc_pick(
                 chat_id, user, roles=("collector", "full"), intent="harvest_pause"
             )
             return True
         if t == __("discovery.btn_harvest_resume"):
-            await self._start_pick(
+            await self._start_disc_pick(
                 chat_id, user, roles=("collector", "full"), intent="harvest_resume"
             )
             return True
         if t == __("discovery.btn_harvest_add"):
-            await self._start_pick(
+            await self._start_disc_pick(
                 chat_id, user, roles=("collector", "full"), intent="harvest_add"
             )
             return True
+        if t == __("discovery.btn_harvest_remove"):
+            await self._start_disc_pick(
+                chat_id, user, roles=("collector", "full"), intent="harvest_remove"
+            )
+            return True
+        if t == __("discovery.btn_harvest_catchup"):
+            await self._start_disc_pick(
+                chat_id, user, roles=("collector", "full"), intent="harvest_catchup"
+            )
+            return True
 
-        # Promo profile ops
+        # Promo profile
+        if t == __("promo.btn_profile_status"):
+            await self._start_promo_pick(chat_id, user, intent="profile_status")
+            return True
         if t == __("promo.btn_dry"):
             await self._start_promo_pick(chat_id, user, intent="promo_dry")
             return True
@@ -253,30 +393,61 @@ class PanelController:
         if t == __("promo.btn_mode_copy"):
             await self._start_promo_pick(chat_id, user, intent="promo_mode_copy")
             return True
+        if t == __("promo.btn_route_add"):
+            await self._start_promo_pick(chat_id, user, intent="route_add")
+            return True
+        if t == __("promo.btn_route_remove"):
+            await self._start_promo_pick(chat_id, user, intent="route_remove")
+            return True
+        if t == __("promo.btn_group_add"):
+            await self._start_promo_pick(chat_id, user, intent="group_add")
+            return True
+        if t == __("promo.btn_route_pause"):
+            await self._start_promo_pick(chat_id, user, intent="route_pause")
+            return True
+        if t == __("promo.btn_queue_status"):
+            await self._start_promo_pick(chat_id, user, intent="promo_queue_status")
+            return True
+        if t == __("promo.btn_queue_clear"):
+            await self._start_promo_pick(chat_id, user, intent="promo_queue_clear")
+            return True
+        if t == __("promo.btn_safety_dump"):
+            await self._start_promo_pick(chat_id, user, intent="promo_safety_dump")
+            return True
 
         return False
 
     async def _ids_for_roles(self, tid: int, roles: tuple[str, ...]) -> list[str]:
         rows = await AccountService(self.db).list_for_user(tid)
+        want = {r.lower() for r in roles}
         return [
             str(r.get("id"))
             for r in rows
-            if str(r.get("role") or "").lower() in roles and r.get("id")
+            if str(r.get("role") or "").lower() in want and r.get("id")
         ]
 
-    async def _start_pick(
-        self, chat_id: int, user: User, *, roles: tuple[str, ...], intent: str
+    async def _start_disc_pick(
+        self,
+        chat_id: int,
+        user: User,
+        *,
+        roles: tuple[str, ...],
+        intent: str,
     ) -> None:
         tid = int(user.get("telegram_id"))
         if not self.config.github_ready():
             await self.tg.send_message(
-                chat_id, __("accounts.missing_github"), reply_markup=discovery_menu_keyboard()
+                chat_id,
+                __("accounts.missing_github"),
+                reply_markup=discovery_menu_keyboard(),
             )
             return
         ids = await self._ids_for_roles(tid, roles)
         if not ids:
             await self.tg.send_message(
-                chat_id, __("discovery.no_role_account"), reply_markup=discovery_menu_keyboard()
+                chat_id,
+                __("discovery.no_role_account"),
+                reply_markup=discovery_menu_keyboard(),
             )
             return
         await UserState.set_state(
@@ -292,10 +463,12 @@ class PanelController:
         tid = int(user.get("telegram_id"))
         if not self.config.github_ready():
             await self.tg.send_message(
-                chat_id, __("accounts.missing_github"), reply_markup=promo_menu_keyboard()
+                chat_id,
+                __("accounts.missing_github"),
+                reply_markup=promo_menu_keyboard(),
             )
             return
-        ids = await self._ids_for_roles(tid, ("promo", "full"))
+        ids = await self._ids_for_roles(tid, PROMO_PICK_ROLES)
         if not ids:
             await self.tg.send_message(
                 chat_id, __("promo.empty"), reply_markup=promo_menu_keyboard()
@@ -308,13 +481,46 @@ class PanelController:
             reply_markup=accounts_pick_keyboard(ids),
         )
 
-    async def _finish_pick(self, chat_id: int, user: User, t: str) -> None:
+    async def _start_to_promo(self, chat_id: int, user: User) -> None:
+        tid = int(user.get("telegram_id"))
+        if not self.config.github_ready():
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.missing_github"),
+                reply_markup=discovery_menu_keyboard(),
+            )
+            return
+        ids = await self._ids_for_roles(tid, PROMO_PICK_ROLES)
+        if not ids:
+            await self.tg.send_message(
+                chat_id, __("promo.empty"), reply_markup=discovery_menu_keyboard()
+            )
+            return
+        await UserState.set_state(self.db, tid, ST_DISC_TO_PROMO_PICK, {})
+        await self.tg.send_message(
+            chat_id,
+            __("panel.pick_account"),
+            reply_markup=accounts_pick_keyboard(ids),
+        )
+
+    async def _finish_disc_pick(self, chat_id: int, user: User, t: str) -> None:
         tid = int(user.get("telegram_id"))
         state = await UserState.get_or_idle(self.db, tid)
         intent = str(state.context.get("intent") or "")
         aid = validate_account_id(t)
         if not aid:
             await self.tg.send_message(chat_id, __("accounts.invalid_id"))
+            return
+
+        if intent == "profile_status":
+            await UserState.clear(self.db, tid)
+            await self._show_discovery_profile(chat_id, user, aid)
+            return
+        if intent == "inspect_dump":
+            await UserState.clear(self.db, tid)
+            await self._dispatch_cache(
+                chat_id, user, aid, "inspect_state_dump", panel="discovery"
+            )
             return
         if intent == "inspect_budget":
             await UserState.set_state(
@@ -328,6 +534,19 @@ class PanelController:
             )
             await self.tg.send_message(chat_id, __("discovery.ask_directory"))
             return
+        if intent == "harvest_remove":
+            await UserState.set_state(
+                self.db, tid, ST_DISC_DIR_REMOVE, {"account_id": aid}
+            )
+            await self.tg.send_message(chat_id, __("discovery.ask_directory"))
+            return
+        if intent == "harvest_catchup":
+            await UserState.set_state(
+                self.db, tid, ST_DISC_CATCHUP, {"account_id": aid}
+            )
+            await self.tg.send_message(chat_id, __("discovery.ask_catchup"))
+            return
+
         await self._apply_profile_intent(chat_id, user, aid, intent)
         await UserState.clear(self.db, tid)
 
@@ -339,8 +558,312 @@ class PanelController:
         if not aid:
             await self.tg.send_message(chat_id, __("accounts.invalid_id"))
             return
+
+        if intent == "profile_status":
+            await UserState.clear(self.db, tid)
+            await self._show_promo_profile(chat_id, user, aid)
+            return
+        if intent == "route_add":
+            await UserState.set_state(
+                self.db, tid, ST_PROMO_ROUTE_ADD, {"account_id": aid}
+            )
+            await self.tg.send_message(
+                chat_id,
+                __("promo.ask_route_add"),
+                reply_markup=promo_menu_keyboard(),
+            )
+            return
+        if intent in {"route_remove", "route_pause"}:
+            await UserState.set_state(
+                self.db,
+                tid,
+                ST_PROMO_ROUTE_SOURCE,
+                {"account_id": aid, "intent": intent},
+            )
+            await self.tg.send_message(
+                chat_id,
+                __("promo.ask_route_source"),
+                reply_markup=promo_menu_keyboard(),
+            )
+            return
+        if intent == "group_add":
+            await UserState.set_state(
+                self.db, tid, ST_PROMO_GROUP_ADD, {"account_id": aid}
+            )
+            await self.tg.send_message(
+                chat_id,
+                __("promo.ask_group_add"),
+                reply_markup=promo_menu_keyboard(),
+            )
+            return
+        if intent == "promo_queue_status":
+            await UserState.clear(self.db, tid)
+            await self._dispatch_cache(
+                chat_id, user, aid, "promo_queue_status", panel="promo"
+            )
+            return
+        if intent == "promo_queue_clear":
+            await UserState.clear(self.db, tid)
+            await self._dispatch_cache(
+                chat_id, user, aid, "promo_queue_clear", panel="promo"
+            )
+            return
+        if intent == "promo_safety_dump":
+            await UserState.clear(self.db, tid)
+            await self._dispatch_cache(
+                chat_id, user, aid, "promo_safety_dump", panel="promo"
+            )
+            return
+
         await self._apply_profile_intent(chat_id, user, aid, intent)
         await UserState.clear(self.db, tid)
+
+    async def _finish_to_promo_pick(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        aid = validate_account_id(t)
+        if not aid:
+            await self.tg.send_message(chat_id, __("accounts.invalid_id"))
+            return
+        try:
+            await AccountService(self.db).require_owned(tid, aid)
+        except AccountConflictError as exc:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.not_owned", account_id=exc.account_id or aid),
+            )
+            return
+        await UserState.set_state(
+            self.db, tid, ST_DISC_TO_PROMO_SOURCE, {"promo_account_id": aid}
+        )
+        await self.tg.send_message(
+            chat_id,
+            __("discovery.ask_to_promo_source"),
+            reply_markup=discovery_menu_keyboard(),
+        )
+
+    async def _finish_to_promo_source(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        if self._is_bad_ref(t):
+            await self.tg.send_message(chat_id, __("pool.invalid_ref"))
+            return
+        state = await UserState.get_or_idle(self.db, tid)
+        await UserState.set_state(
+            self.db,
+            tid,
+            ST_DISC_TO_PROMO_REF,
+            {
+                "promo_account_id": state.context.get("promo_account_id"),
+                "source_channel": t.strip(),
+            },
+        )
+        await self.tg.send_message(
+            chat_id,
+            __("discovery.ask_to_promo_ref"),
+            reply_markup=discovery_menu_keyboard(),
+        )
+
+    async def _finish_to_promo_ref(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        if self._is_bad_ref(t):
+            await self.tg.send_message(chat_id, __("pool.invalid_ref"))
+            return
+        state = await UserState.get_or_idle(self.db, tid)
+        ctx = state.context
+        promo_id = str(ctx.get("promo_account_id") or "")
+        source = str(ctx.get("source_channel") or "")
+        ref = t.strip()
+        await UserState.clear(self.db, tid)
+        await self._dispatch_pool(
+            chat_id,
+            user,
+            action="get",
+            ref=ref,
+            intent="to_promo",
+            promo_account_id=promo_id,
+            source_channel=source,
+        )
+
+    async def _finish_route_add(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str(state.context.get("account_id") or "")
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        try:
+            source, groups = self._parse_route_line(t)
+            result = await prof.promo_add_route(tid, aid, source, groups)
+        except (AccountConflictError, GitHubError) as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=str(exc)[:240])
+            )
+            return
+        await UserState.clear(self.db, tid)
+        route = result.get("route") or {}
+        await self.tg.send_message(
+            chat_id,
+            __(
+                "profile.patch_done",
+                account_id=aid,
+                module="promo_spread",
+                detail=str(route)[:300],
+            ),
+            reply_markup=promo_menu_keyboard(),
+        )
+
+    async def _finish_route_source(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        if self._is_bad_ref(t):
+            await self.tg.send_message(chat_id, __("pool.invalid_ref"))
+            return
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str(state.context.get("account_id") or "")
+        intent = str(state.context.get("intent") or "")
+        source = t.strip()
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        try:
+            if intent == "route_remove":
+                result = await prof.promo_remove_route(tid, aid, source)
+            elif intent == "route_pause":
+                result = await prof.promo_set_route_paused(
+                    tid, aid, source, paused=True
+                )
+            else:
+                await self.tg.send_message(chat_id, __("menu.unknown"))
+                return
+        except (AccountConflictError, GitHubError) as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=str(exc)[:240])
+            )
+            return
+        await UserState.clear(self.db, tid)
+        await self.tg.send_message(
+            chat_id,
+            __(
+                "profile.patch_done",
+                account_id=aid,
+                module="promo_spread",
+                detail=str(result.get("merged") or "")[:300],
+            ),
+            reply_markup=promo_menu_keyboard(),
+        )
+
+    async def _finish_group_add(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str(state.context.get("account_id") or "")
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        try:
+            source, group = self._parse_group_line(t)
+            result = await prof.promo_group_add(tid, aid, source, group)
+        except (AccountConflictError, GitHubError) as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=str(exc)[:240])
+            )
+            return
+        await UserState.clear(self.db, tid)
+        route = result.get("route") or {}
+        await self.tg.send_message(
+            chat_id,
+            __(
+                "profile.patch_done",
+                account_id=aid,
+                module="promo_spread",
+                detail=str(route)[:300],
+            ),
+            reply_markup=promo_menu_keyboard(),
+        )
+
+    async def _show_discovery_profile(
+        self, chat_id: int, user: User, account_id: str
+    ) -> None:
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.missing_github"),
+                reply_markup=discovery_menu_keyboard(),
+            )
+            return
+        tid = int(user.get("telegram_id"))
+        try:
+            row = await AccountService(self.db).require_owned(tid, account_id)
+        except AccountConflictError as exc:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.not_owned", account_id=exc.account_id or account_id),
+            )
+            return
+
+        role = str(row.get("role") or "").lower()
+        modules = {
+            "collector": ["link_harvest"],
+            "inspector": ["group_inspect"],
+        }.get(role, ["link_harvest", "group_inspect"])
+
+        parts: list[str] = []
+        try:
+            for module in modules:
+                desc = await prof.describe_module(tid, account_id, module)
+                parts.append(
+                    __(
+                        "discovery.profile_status",
+                        account_id=account_id,
+                        module=module,
+                        detail=self._format_module_detail(desc),
+                    )
+                )
+        except (AccountConflictError, GitHubError) as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=str(exc)[:240])
+            )
+            return
+
+        await self.tg.send_message(
+            chat_id,
+            "\n\n".join(parts),
+            reply_markup=discovery_menu_keyboard(),
+        )
+
+    async def _show_promo_profile(
+        self, chat_id: int, user: User, account_id: str
+    ) -> None:
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.missing_github"),
+                reply_markup=promo_menu_keyboard(),
+            )
+            return
+        tid = int(user.get("telegram_id"))
+        try:
+            desc = await prof.describe_module(tid, account_id, "promo_spread")
+        except (AccountConflictError, GitHubError) as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=str(exc)[:240])
+            )
+            return
+        await self.tg.send_message(
+            chat_id,
+            __(
+                "promo.profile_status",
+                account_id=account_id,
+                dry_run=desc.get("dry_run"),
+                paused=desc.get("paused"),
+                mode=desc.get("mode"),
+                route_count=desc.get("route_count", 0),
+                routes=self._format_routes(desc.get("routes") or []),
+            ),
+            reply_markup=promo_menu_keyboard(),
+        )
 
     async def _apply_profile_intent(
         self, chat_id: int, user: User, account_id: str, intent: str
@@ -352,6 +875,8 @@ class PanelController:
             )
             return
         tid = int(user.get("telegram_id"))
+        discovery = intent.startswith(("inspect", "harvest"))
+        kb = discovery_menu_keyboard() if discovery else promo_menu_keyboard()
         try:
             if intent == "inspect_dry":
                 result = await prof.toggle_bool(
@@ -417,9 +942,7 @@ class PanelController:
                 module=result.get("module"),
                 detail=str(merged)[:300],
             ),
-            reply_markup=discovery_menu_keyboard()
-            if intent.startswith(("inspect", "harvest"))
-            else promo_menu_keyboard(),
+            reply_markup=kb,
         )
 
     async def _set_budget(self, chat_id: int, user: User, t: str) -> None:
@@ -454,6 +977,41 @@ class PanelController:
             reply_markup=discovery_menu_keyboard(),
         )
 
+    async def _set_catchup(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str(state.context.get("account_id") or "")
+        try:
+            n = int(t.strip())
+        except ValueError:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.error", error="catch_up: 0-200"),
+            )
+            return
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        try:
+            result = await prof.set_catchup(tid, aid, n)
+        except (AccountConflictError, GitHubError) as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=str(exc)[:240])
+            )
+            return
+        await UserState.clear(self.db, tid)
+        await self.tg.send_message(
+            chat_id,
+            __(
+                "profile.patch_done",
+                account_id=aid,
+                module="link_harvest",
+                detail=str(result.get("merged") or "")[:300],
+            ),
+            reply_markup=discovery_menu_keyboard(),
+        )
+
     async def _add_dir(self, chat_id: int, user: User, t: str) -> None:
         tid = int(user.get("telegram_id"))
         state = await UserState.get_or_idle(self.db, tid)
@@ -481,6 +1039,33 @@ class PanelController:
             reply_markup=discovery_menu_keyboard(),
         )
 
+    async def _remove_dir(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str(state.context.get("account_id") or "")
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        try:
+            result = await prof.remove_directory(tid, aid, t)
+        except (AccountConflictError, GitHubError) as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=str(exc)[:240])
+            )
+            return
+        await UserState.clear(self.db, tid)
+        await self.tg.send_message(
+            chat_id,
+            __(
+                "profile.patch_done",
+                account_id=aid,
+                module="link_harvest",
+                detail=str(result.get("merged") or "")[:300],
+            ),
+            reply_markup=discovery_menu_keyboard(),
+        )
+
     async def _dispatch_pool(
         self,
         chat_id: int,
@@ -489,11 +1074,16 @@ class PanelController:
         action: str,
         status_filter: str = "",
         ref: str = "",
+        intent: str = "",
+        promo_account_id: str = "",
+        source_channel: str = "",
     ) -> None:
         runner = self._runner()
         if not runner:
             await self.tg.send_message(
-                chat_id, __("accounts.missing_github"), reply_markup=discovery_menu_keyboard()
+                chat_id,
+                __("accounts.missing_github"),
+                reply_markup=discovery_menu_keyboard(),
             )
             return
         tid = int(user.get("telegram_id"))
@@ -505,6 +1095,9 @@ class PanelController:
                 notify_chat_id=chat_id,
                 status_filter=status_filter,
                 ref=ref,
+                intent=intent,
+                promo_account_id=promo_account_id,
+                source_channel=source_channel,
             )
         except GitHubError as exc:
             await self.tg.send_message(
@@ -524,16 +1117,60 @@ class PanelController:
             reply_markup=discovery_menu_keyboard(),
         )
 
+    async def _dispatch_cache(
+        self,
+        chat_id: int,
+        user: User,
+        account_id: str,
+        action: str,
+        *,
+        panel: str,
+    ) -> None:
+        runner = self._runner()
+        kb = (
+            discovery_menu_keyboard()
+            if panel == "discovery"
+            else promo_menu_keyboard()
+        )
+        if not runner:
+            await self.tg.send_message(
+                chat_id, __("accounts.missing_github"), reply_markup=kb
+            )
+            return
+        tid = int(user.get("telegram_id"))
+        await self.tg.send_message(chat_id, __("cache.working", action=action))
+        try:
+            info = await runner.account_cache_admin(
+                tid,
+                account_id,
+                action=action,
+                notify_chat_id=chat_id,
+            )
+        except (AccountConflictError, GitHubError) as exc:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.error", error=str(exc)[:240]),
+                reply_markup=kb,
+            )
+            return
+        await self.tg.send_message(
+            chat_id,
+            __(
+                "cache.dispatched",
+                action=action,
+                account_id=account_id,
+                run_id=info.get("run_id") or "-",
+                url=info.get("html_url") or "",
+            ),
+            reply_markup=kb,
+        )
+
     async def _pool_mutate(
         self, chat_id: int, user: User, t: str, *, action: str
     ) -> None:
         tid = int(user.get("telegram_id"))
-        ref = (t or "").strip()
-        if not ref or ref.startswith("/") or ref in {
-            __("accounts.btn_cancel"),
-            __("accounts.btn_back"),
-        }:
+        if self._is_bad_ref(t):
             await self.tg.send_message(chat_id, __("pool.invalid_ref"))
             return
         await UserState.clear(self.db, tid)
-        await self._dispatch_pool(chat_id, user, action=action, ref=ref)
+        await self._dispatch_pool(chat_id, user, action=action, ref=t.strip())

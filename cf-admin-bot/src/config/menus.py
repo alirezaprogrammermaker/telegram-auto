@@ -253,27 +253,40 @@ def discovery_menu_keyboard() -> dict:
         "keyboard": [
             [
                 {"text": __("discovery.btn_refresh")},
+                {"text": __("discovery.btn_profile_status")},
+            ],
+            [
                 {"text": __("discovery.btn_pool_status")},
-            ],
-            [
                 {"text": __("discovery.btn_pool_list")},
-                {"text": __("discovery.btn_pool_approve")},
             ],
             [
+                {"text": __("discovery.btn_pool_list_ok")},
+                {"text": __("discovery.btn_pool_list_approved")},
+            ],
+            [
+                {"text": __("discovery.btn_pool_approve")},
                 {"text": __("discovery.btn_pool_reject")},
+            ],
+            [{"text": __("discovery.btn_to_promo")}],
+            [
                 {"text": __("discovery.btn_inspect_dry")},
+                {"text": __("discovery.btn_inspect_budget")},
             ],
             [
                 {"text": __("discovery.btn_inspect_pause")},
                 {"text": __("discovery.btn_inspect_resume")},
             ],
             [
-                {"text": __("discovery.btn_inspect_budget")},
                 {"text": __("discovery.btn_harvest_pause")},
+                {"text": __("discovery.btn_harvest_resume")},
             ],
             [
-                {"text": __("discovery.btn_harvest_resume")},
                 {"text": __("discovery.btn_harvest_add")},
+                {"text": __("discovery.btn_harvest_remove")},
+            ],
+            [
+                {"text": __("discovery.btn_harvest_catchup")},
+                {"text": __("discovery.btn_inspect_dump")},
             ],
             [
                 {"text": __("discovery.btn_help")},
@@ -289,9 +302,10 @@ def promo_menu_keyboard() -> dict:
         "keyboard": [
             [
                 {"text": __("promo.btn_refresh")},
-                {"text": __("promo.btn_dry")},
+                {"text": __("promo.btn_profile_status")},
             ],
             [
+                {"text": __("promo.btn_dry")},
                 {"text": __("promo.btn_pause")},
                 {"text": __("promo.btn_resume")},
             ],
@@ -300,9 +314,22 @@ def promo_menu_keyboard() -> dict:
                 {"text": __("promo.btn_mode_copy")},
             ],
             [
-                {"text": __("promo.btn_help")},
-                {"text": __("accounts.btn_back")},
+                {"text": __("promo.btn_route_add")},
+                {"text": __("promo.btn_route_remove")},
             ],
+            [
+                {"text": __("promo.btn_group_add")},
+                {"text": __("promo.btn_route_pause")},
+            ],
+            [
+                {"text": __("promo.btn_queue_status")},
+                {"text": __("promo.btn_queue_clear")},
+            ],
+            [
+                {"text": __("promo.btn_safety_dump")},
+                {"text": __("promo.btn_help")},
+            ],
+            [{"text": __("accounts.btn_back")}],
         ],
         "resize_keyboard": True,
     }

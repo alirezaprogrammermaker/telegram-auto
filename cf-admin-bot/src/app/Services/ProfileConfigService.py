@@ -1,4 +1,4 @@
-"""Safe profile module toggles for owned accounts (GitHub profile JSON)."""
+"""Safe profile module toggles + promo routes for owned accounts."""
 from __future__ import annotations
 
 from typing import Any
@@ -6,8 +6,16 @@ from typing import Any
 from app.Services.AccountScaffoldService import AccountScaffoldService, validate_account_id
 from app.Services.AccountService import AccountConflictError, AccountService
 from app.Services.GitHubService import GitHubError
+from app.Support.PromoRoutes import (
+    default_route,
+    display_ref,
+    find_route,
+    migrate_routes,
+    normalize_group_list,
+    remove_route,
+    upsert_route,
+)
 
-# module -> allowed patch keys and value kinds
 ALLOWED: dict[str, dict[str, str]] = {
     "group_inspect": {
         "dry_run": "bool",
@@ -23,6 +31,16 @@ ALLOWED: dict[str, dict[str, str]] = {
         "dry_run": "bool",
         "paused": "bool",
         "mode": "mode",
+        "routes": "routes",
+        "auto_join": "bool",
+        "safety": "safety",
+        "source": "nullable",
+        "groups": "dirs",
+    },
+    "channel_forward": {
+        "dry_run": "bool",
+        "paused": "bool",
+        "auto_join": "bool",
     },
 }
 
@@ -30,6 +48,7 @@ ROLE_MODULE = {
     "inspector": "group_inspect",
     "collector": "link_harvest",
     "promo": "promo_spread",
+    "forward": "channel_forward",
 }
 
 
@@ -43,9 +62,8 @@ class ProfileConfigService:
         self, user_id: int, account_id: str, module: str
     ) -> None:
         row = await self.accounts.require_owned(user_id, account_id)
-        expected = ROLE_MODULE.get(str(row.get("role") or "").lower())
-        # Allow full role to patch any allowed module; otherwise enforce match.
         role = str(row.get("role") or "").lower()
+        expected = ROLE_MODULE.get(role)
         if role != "full" and expected and expected != module:
             raise AccountConflictError("wrong_role_for_module", account_id=account_id)
 
@@ -70,12 +88,25 @@ class ProfileConfigService:
                     raise GitHubError("mode must be forward|copy")
                 out[key] = mode
             elif kind == "dirs":
-                if not isinstance(value, list):
+                if value is None:
+                    out[key] = []
+                elif not isinstance(value, list):
                     raise GitHubError("directories must be a list")
-                dirs = [str(x).strip() for x in value if str(x).strip()]
-                if len(dirs) > 5:
-                    raise GitHubError("max 5 directories")
-                out[key] = dirs
+                else:
+                    dirs = [str(x).strip() for x in value if str(x).strip()]
+                    if len(dirs) > 40:
+                        raise GitHubError("too many entries")
+                    out[key] = dirs
+            elif kind == "routes":
+                if not isinstance(value, list):
+                    raise GitHubError("routes must be a list")
+                out[key] = value
+            elif kind == "safety":
+                if not isinstance(value, dict):
+                    raise GitHubError("safety must be an object")
+                out[key] = value
+            elif kind == "nullable":
+                out[key] = value
             else:
                 raise GitHubError(f"unknown kind {kind}")
         if not out:
@@ -96,6 +127,59 @@ class ProfileConfigService:
         clean = self._validate_patch(module, patch)
         return await self.scaffold.patch_profile_modules(aid, module, clean)
 
+    async def module_config(
+        self, user_id: int, account_id: str, module: str
+    ) -> dict[str, Any]:
+        await self.accounts.require_owned(user_id, account_id)
+        info = await self.scaffold.get_profile(account_id)
+        modules = (info.get("profile") or {}).get("modules") or {}
+        cfg = modules.get(module) if isinstance(modules, dict) else {}
+        return cfg if isinstance(cfg, dict) else {}
+
+    async def describe_module(
+        self, user_id: int, account_id: str, module: str
+    ) -> dict[str, Any]:
+        cfg = await self.module_config(user_id, account_id, module)
+        if module == "promo_spread":
+            routes = migrate_routes(cfg)
+            return {
+                "module": module,
+                "enabled": cfg.get("enabled"),
+                "paused": cfg.get("paused"),
+                "dry_run": cfg.get("dry_run"),
+                "mode": cfg.get("mode"),
+                "routes": routes,
+                "route_count": len(routes),
+            }
+        if module == "link_harvest":
+            dirs = [str(x) for x in (cfg.get("directories") or []) if str(x).strip()]
+            return {
+                "module": module,
+                "enabled": cfg.get("enabled"),
+                "paused": cfg.get("paused"),
+                "catch_up_limit": cfg.get("catch_up_limit"),
+                "directories": dirs,
+            }
+        if module == "group_inspect":
+            return {
+                "module": module,
+                "enabled": cfg.get("enabled"),
+                "paused": cfg.get("paused"),
+                "dry_run": cfg.get("dry_run"),
+                "daily_join_budget": cfg.get("daily_join_budget"),
+            }
+        if module == "channel_forward":
+            return {
+                "module": module,
+                "enabled": cfg.get("enabled"),
+                "paused": cfg.get("paused"),
+                "dry_run": cfg.get("dry_run"),
+                "route_count": len(cfg.get("routes") or [])
+                if isinstance(cfg.get("routes"), list)
+                else 0,
+            }
+        return {"module": module, "config": cfg}
+
     async def toggle_bool(
         self,
         user_id: int,
@@ -105,10 +189,8 @@ class ProfileConfigService:
         *,
         value: bool | None = None,
     ) -> dict[str, Any]:
-        info = await self.scaffold.get_profile(account_id)
-        modules = (info.get("profile") or {}).get("modules") or {}
-        current = modules.get(module) if isinstance(modules, dict) else {}
-        cur_val = bool((current or {}).get(key)) if isinstance(current, dict) else False
+        cfg = await self.module_config(user_id, account_id, module)
+        cur_val = bool(cfg.get(key))
         new_val = (not cur_val) if value is None else bool(value)
         return await self.patch(user_id, account_id, module, {key: new_val})
 
@@ -119,22 +201,132 @@ class ProfileConfigService:
             user_id, account_id, "group_inspect", {"daily_join_budget": budget}
         )
 
+    async def set_catchup(
+        self, user_id: int, account_id: str, n: int
+    ) -> dict[str, Any]:
+        return await self.patch(
+            user_id, account_id, "link_harvest", {"catch_up_limit": n}
+        )
+
     async def add_directory(
         self, user_id: int, account_id: str, ref: str
     ) -> dict[str, Any]:
-        shown = (ref or "").strip()
+        shown = display_ref(ref)
         if not shown:
             raise GitHubError("empty directory")
-        info = await self.scaffold.get_profile(account_id)
-        modules = (info.get("profile") or {}).get("modules") or {}
-        current = modules.get("link_harvest") if isinstance(modules, dict) else {}
-        dirs = list((current or {}).get("directories") or []) if isinstance(current, dict) else []
-        dirs = [str(x) for x in dirs if str(x).strip()]
-        if shown in dirs:
+        cfg = await self.module_config(user_id, account_id, "link_harvest")
+        dirs = [str(x) for x in (cfg.get("directories") or []) if str(x).strip()]
+        if any(display_ref(d) == shown for d in dirs):
             raise GitHubError("directory_exists")
         if len(dirs) >= 5:
             raise GitHubError("directories_full")
         dirs.append(shown)
         return await self.patch(
             user_id, account_id, "link_harvest", {"directories": dirs}
+        )
+
+    async def remove_directory(
+        self, user_id: int, account_id: str, ref: str
+    ) -> dict[str, Any]:
+        shown = display_ref(ref)
+        cfg = await self.module_config(user_id, account_id, "link_harvest")
+        dirs = [str(x) for x in (cfg.get("directories") or []) if str(x).strip()]
+        new_dirs = [d for d in dirs if display_ref(d) != shown]
+        if len(new_dirs) == len(dirs):
+            raise GitHubError("directory_missing")
+        return await self.patch(
+            user_id, account_id, "link_harvest", {"directories": new_dirs}
+        )
+
+    async def _save_promo_routes(
+        self, user_id: int, account_id: str, routes: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        return await self.patch(
+            user_id,
+            account_id,
+            "promo_spread",
+            {"routes": routes, "source": None, "groups": [], "auto_join": False},
+        )
+
+    async def promo_add_route(
+        self,
+        user_id: int,
+        account_id: str,
+        source: str,
+        groups_csv: str,
+    ) -> dict[str, Any]:
+        cfg = await self.module_config(user_id, account_id, "promo_spread")
+        routes = migrate_routes(cfg)
+        source_ref = display_ref(source)
+        groups = normalize_group_list(
+            [p.strip() for p in groups_csv.replace("،", ",").split(",") if p.strip()]
+        )
+        if not source_ref or not groups:
+            raise GitHubError("need source and groups")
+        existing = find_route(routes, source_ref)
+        if existing:
+            merged = normalize_group_list(list(existing.get("groups") or []) + groups)
+            route = default_route(
+                source_ref,
+                merged,
+                enabled=existing.get("enabled", True),
+                paused=existing.get("paused", False),
+                mode=existing.get("mode") or cfg.get("mode") or "forward",
+            )
+        else:
+            route = default_route(
+                source_ref, groups, mode=cfg.get("mode") or "forward"
+            )
+        routes = upsert_route(routes, route)
+        result = await self._save_promo_routes(user_id, account_id, routes)
+        result["route"] = route
+        return result
+
+    async def promo_remove_route(
+        self, user_id: int, account_id: str, source: str
+    ) -> dict[str, Any]:
+        cfg = await self.module_config(user_id, account_id, "promo_spread")
+        routes = remove_route(migrate_routes(cfg), source)
+        return await self._save_promo_routes(user_id, account_id, routes)
+
+    async def promo_set_route_paused(
+        self, user_id: int, account_id: str, source: str, *, paused: bool
+    ) -> dict[str, Any]:
+        cfg = await self.module_config(user_id, account_id, "promo_spread")
+        routes = migrate_routes(cfg)
+        route = find_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        route["paused"] = bool(paused)
+        routes = upsert_route(routes, route)
+        return await self._save_promo_routes(user_id, account_id, routes)
+
+    async def promo_group_add(
+        self, user_id: int, account_id: str, source: str, group: str
+    ) -> dict[str, Any]:
+        cfg = await self.module_config(user_id, account_id, "promo_spread")
+        routes = migrate_routes(cfg)
+        route = find_route(routes, source)
+        if not route:
+            route = default_route(source, [], mode=cfg.get("mode") or "forward")
+        groups = normalize_group_list(list(route.get("groups") or []))
+        g = display_ref(group)
+        if g not in groups:
+            groups.append(g)
+        route["groups"] = groups
+        routes = upsert_route(routes, route)
+        result = await self._save_promo_routes(user_id, account_id, routes)
+        result["route"] = route
+        return result
+
+    async def to_promo(
+        self,
+        user_id: int,
+        promo_account_id: str,
+        source: str,
+        group_ref: str,
+    ) -> dict[str, Any]:
+        """Add an already-approved group ref onto a promo route (profile only)."""
+        return await self.promo_group_add(
+            user_id, promo_account_id, source, group_ref
         )

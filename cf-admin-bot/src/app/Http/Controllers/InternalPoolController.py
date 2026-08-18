@@ -1,8 +1,10 @@
-"""GHA → Worker: pool-admin result notification."""
+"""GHA → Worker: pool-admin result (+ optional to_promo auto-patch)."""
 from __future__ import annotations
 
+from app.Services.ProfileConfigService import ProfileConfigService
 from app.Services.TelegramService import TelegramService
 from app.Support.BridgeAuth import require_bridge_token
+from app.Support.GithubFactory import make_scaffold
 from app.Support.Lang import __
 from config.bot import BotConfig
 from workers import Response
@@ -33,15 +35,50 @@ class InternalPoolController:
         except (TypeError, ValueError):
             return Response.json({"ok": False, "error": "missing_notify"}, status=400)
 
-        body = self._format(data)
         tg = TelegramService(self.config.telegram_token)
+        body = self._format(data)
+
+        # Optional: auto attach approved pool item to promo route.
+        extra = ""
+        if str(data.get("intent") or "") == "to_promo":
+            extra = await self._maybe_to_promo(data)
+
         try:
-            await tg.send_message(chat_id, body)
+            await tg.send_message(chat_id, body + (("\n\n" + extra) if extra else ""))
         except Exception as exc:
             return Response.json(
                 {"ok": False, "error": str(exc)[:200]}, status=502
             )
         return Response.json({"ok": True})
+
+    async def _maybe_to_promo(self, data: dict) -> str:
+        item = data.get("item") or {}
+        if not data.get("found") or str(item.get("status") or "") != "approved":
+            return __(
+                "pool.to_promo_blocked",
+                status=(item.get("status") if item else "missing"),
+            )
+        promo_id = str(data.get("promo_account_id") or "").strip()
+        source = str(data.get("source_channel") or "").strip()
+        ref = str(item.get("ref") or "").strip()
+        user_id = int(data.get("notify_user_id") or 0)
+        if not (promo_id and source and ref and user_id):
+            return __("pool.to_promo_missing_fields")
+        scaffold = make_scaffold(self.config)
+        if not scaffold:
+            return __("accounts.missing_github")
+        try:
+            await ProfileConfigService(self.config.db, scaffold).to_promo(
+                user_id, promo_id, source, ref
+            )
+        except Exception as exc:
+            return __("accounts.error", error=str(exc)[:200])
+        return __(
+            "pool.to_promo_done",
+            account_id=promo_id,
+            source=source,
+            ref=ref,
+        )
 
     def _format(self, data: dict) -> str:
         action = data.get("action") or "-"
@@ -62,6 +99,20 @@ class InternalPoolController:
                 "pool.report_status",
                 total=counts.get("total", 0),
                 counts=counts_txt or "-",
+                url=data.get("run_url") or "",
+            )
+        if action == "get":
+            item = data.get("item") or {}
+            if not data.get("found"):
+                return __(
+                    "pool.report_get_missing",
+                    url=data.get("run_url") or "",
+                )
+            return __(
+                "pool.report_get",
+                ref=item.get("ref") or "-",
+                status=item.get("status") or "-",
+                title=item.get("title") or "-",
                 url=data.get("run_url") or "",
             )
         if action == "list":
