@@ -1,0 +1,32 @@
+{
+  "id": "any",
+  "label": "any (full)",
+  "session_name": "any",
+  "modules": {
+    "auto_reply": {
+      "enabled": true
+    },
+    "channel_forward": {
+      "enabled": true,
+      "auto_join": false,
+      "routes": []
+    },
+    "digest": {
+      "enabled": true
+    },
+    "promo_spread": {
+      "enabled": true,
+      "dry_run": true,
+      "paused": false,
+      "mode": "forward",
+      "auto_join": false,
+      "routes": []
+    },
+    "link_harvest": {
+      "enabled": false
+    },
+    "group_inspect": {
+      "enabled": false
+    }
+  }
+}
