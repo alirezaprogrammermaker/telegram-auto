@@ -26,15 +26,6 @@
       "session_name": "test",
       "session_secret": "TELEGRAM_SESSION_B64_TEST",
       "profile": "config/accounts/test.json"
-    },
-    {
-      "id": "any",
-      "label": "any (full)",
-      "enabled": false,
-      "workflow": "run-account-any.yml",
-      "session_name": "any",
-      "session_secret": "TELEGRAM_SESSION_B64_ANY",
-      "profile": "config/accounts/any.json"
     }
   ]
 }
