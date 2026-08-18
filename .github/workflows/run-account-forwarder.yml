@@ -1,0 +1,32 @@
+# Auto-scaffolded by admin-bot / scripts/scaffold_account.py
+# Session secret: TELEGRAM_SESSION_B64_FORWARDER
+# Profile: config/accounts/forwarder.json
+
+name: run-account-forwarder
+
+on:
+  schedule:
+    - cron: "22 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      max_runtime_seconds:
+        description: "Seconds to run before clean exit (default 5h55m)"
+        required: false
+        default: "21300"
+
+permissions:
+  contents: read
+
+jobs:
+  forwarder:
+    uses: ./.github/workflows/run-account.yml
+    with:
+      account_id: forwarder
+      session_name: forwarder
+      max_runtime_seconds: ${{ inputs.max_runtime_seconds || '21300' }}
+    secrets:
+      API_ID: ${{ secrets.API_ID }}
+      API_HASH: ${{ secrets.API_HASH }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64_FORWARDER }}
+      ADMIN_IDS: ${{ secrets.ADMIN_IDS }}

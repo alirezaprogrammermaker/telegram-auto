@@ -35,6 +35,15 @@
       "session_name": "any",
       "session_secret": "TELEGRAM_SESSION_B64_ANY",
       "profile": "config/accounts/any.json"
+    },
+    {
+      "id": "forwarder",
+      "label": "forwarder (forward)",
+      "enabled": false,
+      "workflow": "run-account-forwarder.yml",
+      "session_name": "forwarder",
+      "session_secret": "TELEGRAM_SESSION_B64_FORWARDER",
+      "profile": "config/accounts/forwarder.json"
     }
   ]
 }

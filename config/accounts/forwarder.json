@@ -1,0 +1,27 @@
+{
+  "id": "forwarder",
+  "label": "forwarder (forward)",
+  "session_name": "forwarder",
+  "modules": {
+    "auto_reply": {
+      "enabled": true
+    },
+    "channel_forward": {
+      "enabled": true,
+      "auto_join": false,
+      "routes": []
+    },
+    "digest": {
+      "enabled": true
+    },
+    "promo_spread": {
+      "enabled": false
+    },
+    "link_harvest": {
+      "enabled": false
+    },
+    "group_inspect": {
+      "enabled": false
+    }
+  }
+}
