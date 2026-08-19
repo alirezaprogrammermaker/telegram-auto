@@ -1,0 +1,30 @@
+{
+  "id": "likyab1",
+  "label": "likyab1 (linkdir)",
+  "session_name": "likyab1",
+  "modules": {
+    "auto_reply": {
+      "enabled": false
+    },
+    "channel_forward": {
+      "enabled": false
+    },
+    "digest": {
+      "enabled": false
+    },
+    "promo_spread": {
+      "enabled": false
+    },
+    "link_harvest": {
+      "enabled": false
+    },
+    "group_inspect": {
+      "enabled": false
+    },
+    "linkdir_collect": {
+      "enabled": true,
+      "paused": false,
+      "steps": "search,snowball,rerank"
+    }
+  }
+}
