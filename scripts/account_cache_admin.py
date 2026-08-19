@@ -16,18 +16,9 @@ from app.storage import load_json  # noqa: E402
 
 
 def _promo_queue_status() -> dict:
-    from modules.promo_spread.queue import PromoQueue
+    from app.metrics_snapshot import collect_runtime_metrics
 
-    q = PromoQueue()
-    pending = q.pending_count() if hasattr(q, "pending_count") else 0
-    # fallback count
-    if not hasattr(q, "pending_count"):
-        data = load_json(data_path("promo_queue.json"), {"items": []})
-        pending = sum(
-            1
-            for i in (data.get("items") or [])
-            if isinstance(i, dict) and i.get("status") == "pending"
-        )
+    pending = collect_runtime_metrics().get("promo_queue_pending", 0)
     return {"queue": "promo", "pending": pending}
 
 
@@ -39,14 +30,10 @@ def _promo_queue_clear() -> dict:
 
 
 def _forward_queue_status() -> dict:
+    from app.metrics_snapshot import collect_runtime_metrics
+
     path = data_path("publish_queue.json")
-    data = load_json(path, {"items": []})
-    items = data.get("items") if isinstance(data, dict) else []
-    pending = sum(
-        1
-        for i in (items or [])
-        if isinstance(i, dict) and i.get("status") in {"pending", "ready", None}
-    )
+    pending = collect_runtime_metrics().get("forward_queue_pending", 0)
     return {"queue": "forward", "pending": pending, "path": str(path)}
 
 

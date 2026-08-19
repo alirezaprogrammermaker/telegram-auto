@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from app.Http.Controllers.AccountsController import AccountsController
 from app.Http.Controllers.AssignmentController import AssignmentController
+from app.Http.Controllers.AutomationController import AutomationController
 from app.Http.Controllers.CommandController import CommandController
 from app.Http.Controllers.ForwardController import ForwardController
 from app.Http.Controllers.HelpController import HelpController
@@ -36,6 +37,7 @@ class AdminController:
         self.help = HelpController(tg, config)
         self.commands = CommandController(tg, config)
         self.assignment = AssignmentController(tg, config)
+        self.automation = AutomationController(tg, config)
 
     def _runner(self) -> RunOrchestratorService | None:
         gh = make_github(self.config)
@@ -129,6 +131,8 @@ class AdminController:
         if await self.commands.handle(chat_id, user, t):
             return
         if await self.assignment.handle(chat_id, user, t):
+            return
+        if await self.automation.handle(chat_id, user, t):
             return
         if await self.help.handle(chat_id, user, t):
             return

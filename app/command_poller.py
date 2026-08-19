@@ -154,6 +154,12 @@ class CommandPoller:
             meta["pid"] = os.getpid()
         except Exception:
             pass
+        try:
+            from app.metrics_snapshot import collect_runtime_metrics
+
+            meta["metrics"] = collect_runtime_metrics()
+        except Exception:
+            logger.debug("command_poller: metrics snapshot skipped", exc_info=True)
 
         bridge_request(
             "POST",

@@ -11,6 +11,7 @@
 ## فهرست
 
 - [ساختار پروژه](#ساختار-پروژه)
+- [مستندات پروژه](#مستندات-پروژه)
 - [راه‌اندازی سریع](#راهاندازی-سریع)
 - [لاگین](#لاگین)
 - [ماژول‌ها](#ماژولها)
@@ -21,6 +22,21 @@
 - [افزودن ماژول جدید](#افزودن-ماژول-جدید)
 - [عیب‌یابی](#عیبیابی)
 - [امنیت](#امنیت)
+
+---
+
+## مستندات پروژه
+
+برای درک سریع معماری، config ownership، workflowها و `cf-admin-bot` از مرکز مستندات استفاده کن:
+
+- [`docs/README.md`](docs/README.md)
+- [`docs/architecture/system-overview.md`](docs/architecture/system-overview.md)
+- [`docs/configuration/config-sources.md`](docs/configuration/config-sources.md)
+
+اگر روی پنل مدیریتی کار می‌کنی:
+
+- [`docs/cf-admin-bot/overview.md`](docs/cf-admin-bot/overview.md)
+- [`docs/cf-admin-bot/request-flows.md`](docs/cf-admin-bot/request-flows.md)
 
 ---
 

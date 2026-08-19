@@ -4,6 +4,12 @@ Control-plane bot for `telegram-auto`. Only **you** talk to this bot.
 Telethon accounts should **not** `/start` it.
 
 Read [HOW_WE_BUILT.md](HOW_WE_BUILT.md) for setup history and Windows/Pyodide deploy workaround.
+For maintainer docs, start with:
+
+- [`../docs/README.md`](../docs/README.md)
+- [`../docs/cf-admin-bot/overview.md`](../docs/cf-admin-bot/overview.md)
+- [`../docs/cf-admin-bot/request-flows.md`](../docs/cf-admin-bot/request-flows.md)
+- [`../docs/cf-admin-bot/d1-schema.md`](../docs/cf-admin-bot/d1-schema.md)
 
 ## Live
 
@@ -103,9 +109,10 @@ Labels come from `lang/fa/messages.py` (`menu.btn_*`).
 | عملیات | GHA dispatch / cancel / restart / merge-group-pool |
 | وضعیت | owned accounts + latest workflow run |
 | کشف | pool status/list/approve/reject + inspect/harvest profile toggles |
-| تبلیغ | dry_run / pause / mode on promo profile |
+| تبلیغ | dry_run / pause / mode / مسیرها / group / safety edit |
 | فوروارد | مسیرها، فیلتر، schedule، media/dedup/delivery، صف |
 | تنظیمات | admin list |
+| راهنما | HelpGuide پویا از D1 (کشف/تبلیغ/فوروارد/عمومی) |
 
 Bridge endpoints (Bearer `BRIDGE_TOKEN`):
 

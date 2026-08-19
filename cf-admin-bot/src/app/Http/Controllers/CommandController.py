@@ -15,6 +15,7 @@ from app.Services.AccountScaffoldService import validate_account_id
 from app.Services.AccountService import AccountConflictError, AccountService
 from app.Services.TelegramService import TelegramService
 from app.Support.Lang import __
+from app.Support.StatusFormat import format_live_metrics
 from config.bot import BotConfig
 from config.menus import accounts_pick_keyboard, main_keyboard
 
@@ -326,6 +327,20 @@ class CommandController:
             hb_view = hb.to_view()
             lines.append(f"وضعیت: <code>{hb_view['status']}</code>")
             lines.append(f"آخرین heartbeat: <code>{hb_view['updated_at']}</code>")
+            meta = hb_view.get("meta") if isinstance(hb_view.get("meta"), dict) else {}
+            metrics = meta.get("metrics") if isinstance(meta.get("metrics"), dict) else {}
+            lines.append(
+                format_live_metrics(
+                    {
+                        "heartbeat_stale": False,
+                        "heartbeat_status": hb_view.get("status"),
+                        "heartbeat_at": hb_view.get("updated_at"),
+                        "stats_today": metrics.get("stats_today"),
+                        "forward_queue_pending": metrics.get("forward_queue_pending"),
+                        "promo_queue_pending": metrics.get("promo_queue_pending"),
+                    }
+                )
+            )
             modules = hb_view.get("modules") or {}
             if modules:
                 lines.append("ماژول‌ها:")

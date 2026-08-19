@@ -1,0 +1,60 @@
+# Trigger cf-admin-bot health/recovery watchdog on a schedule.
+
+name: automation-watchdog
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      user_id:
+        description: "Optional owner telegram user id"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  watchdog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call admin-bot automation endpoint
+        env:
+          BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+          USER_ID: ${{ inputs.user_id }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BRIDGE_URL:-}" ] || [ -z "${BRIDGE_TOKEN:-}" ]; then
+            echo "Missing ADMIN_BOT_BRIDGE_URL or ADMIN_BOT_BRIDGE_TOKEN"
+            exit 1
+          fi
+          python3 <<'PY'
+          import json, os, urllib.parse, urllib.request
+
+          user_id = (os.environ.get("USER_ID") or "").strip()
+          params = {}
+          if user_id:
+              params["user_id"] = user_id
+          url = os.environ["BRIDGE_URL"].rstrip("/") + "/internal/automation/run"
+          if params:
+              url += "?" + urllib.parse.urlencode(params)
+
+          req = urllib.request.Request(
+              url,
+              data=b"{}",
+              method="POST",
+              headers={
+                  "Authorization": f"Bearer {os.environ['BRIDGE_TOKEN']}",
+                  "Content-Type": "application/json",
+              },
+          )
+          with urllib.request.urlopen(req, timeout=60) as resp:
+              body = resp.read().decode("utf-8", errors="replace")
+              print(body)
+              data = json.loads(body)
+              if not data.get("ok"):
+                  raise SystemExit("watchdog returned ok=false")
+          PY

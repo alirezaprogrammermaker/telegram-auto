@@ -12,17 +12,25 @@ from app.Services.ProfileConfigService import ProfileConfigService
 from app.Services.RunOrchestratorService import RunOrchestratorService
 from app.Services.StatusService import StatusService
 from app.Services.TelegramService import TelegramService
+from app.Support.ErrorFormat import friendly_error
 from app.Support.GithubFactory import make_github, make_scaffold
 from app.Support.Lang import __
+from app.Support.StatusFormat import format_live_metrics, format_run_line
 from config.bot import BotConfig
 from config.menus import (
     accounts_pick_keyboard,
+    discovery_inspect_keyboard,
+    discovery_linkdir_keyboard,
     discovery_menu_keyboard,
+    discovery_pool_keyboard,
     main_keyboard,
     promo_menu_keyboard,
+    promo_routes_keyboard,
+    promo_safety_keyboard,
     status_menu_keyboard,
 )
 
+ST_DISC_SUB = "discovery_sub"          # which sub-menu is shown
 ST_DISC_PICK = "discovery_pick"
 ST_DISC_APPROVE = "discovery_approve_ref"
 ST_DISC_REJECT = "discovery_reject_ref"
@@ -33,10 +41,15 @@ ST_DISC_CATCHUP = "discovery_catchup"
 ST_DISC_TO_PROMO_PICK = "discovery_to_promo_pick"
 ST_DISC_TO_PROMO_SOURCE = "discovery_to_promo_source"
 ST_DISC_TO_PROMO_REF = "discovery_to_promo_ref"
+ST_PROMO_QUEUE_CLEAR_CONFIRM = "promo_queue_clear_confirm"
 ST_PROMO_PICK = "promo_pick"
 ST_PROMO_ROUTE_ADD = "promo_route_add"
 ST_PROMO_ROUTE_SOURCE = "promo_route_source"
 ST_PROMO_GROUP_ADD = "promo_group_add"
+ST_PROMO_GROUP_REMOVE = "promo_group_remove"
+ST_PROMO_ROUTE_MODE = "promo_route_mode"
+ST_PROMO_GROUPS = "promo_groups"
+ST_PROMO_SAFETY_CMD = "promo_safety_cmd"
 
 DISCOVERY_PICK_ROLES = ("collector", "inspector", "linkdir", "full")
 PROMO_PICK_ROLES = ("promo", "full")
@@ -72,11 +85,14 @@ class PanelController:
             return __(empty_key)
         lines = []
         for row in accounts:
-            on = "ON" if row.get("enabled") else "OFF"
-            run_bit = f"{row.get('run_status')}/{row.get('run_conclusion')}"
-            if row.get("run_id"):
-                run_bit = f"#{row.get('run_id')} {run_bit}"
-            url = row.get("run_url") or ""
+            on = "✅ فعال" if row.get("enabled") else "⏸ غیرفعال"
+            run_bit = format_run_line(
+                row.get("run_id"),
+                row.get("run_status"),
+                row.get("run_conclusion"),
+                row.get("run_url"),
+            )
+            live_bit = format_live_metrics(row)
             lines.append(
                 __(
                     "status.line",
@@ -85,7 +101,8 @@ class PanelController:
                     role=row.get("role"),
                     status=row.get("status"),
                     run=run_bit,
-                    url=url,
+                    live=live_bit,
+                    url="",
                 )
             )
         return "\n".join(lines)
@@ -122,13 +139,14 @@ class PanelController:
                 continue
             src = route.get("source") or "?"
             groups = ", ".join(route.get("groups") or []) or "—"
+            mode = route.get("mode") or "default"
             flags: list[str] = []
             if route.get("paused"):
                 flags.append("paused")
             if not route.get("enabled", True):
                 flags.append("off")
             suffix = f" [{','.join(flags)}]" if flags else ""
-            lines.append(f"• {src}: {groups}{suffix}")
+            lines.append(f"• {src} ({mode}): {groups}{suffix}")
         return "\n".join(lines) if lines else "—"
 
     @staticmethod
@@ -229,6 +247,9 @@ class PanelController:
             )
             return True
 
+        if current == ST_PROMO_QUEUE_CLEAR_CONFIRM:
+            await self._finish_promo_queue_clear_confirm(chat_id, user, t)
+            return True
         if current == ST_DISC_PICK:
             await self._finish_disc_pick(chat_id, user, t)
             return True
@@ -271,6 +292,18 @@ class PanelController:
         if current == ST_PROMO_GROUP_ADD:
             await self._finish_group_add(chat_id, user, t)
             return True
+        if current == ST_PROMO_GROUP_REMOVE:
+            await self._finish_group_remove(chat_id, user, t)
+            return True
+        if current == ST_PROMO_ROUTE_MODE:
+            await self._finish_route_mode(chat_id, user, t)
+            return True
+        if current == ST_PROMO_GROUPS:
+            await self._finish_groups_list(chat_id, user, t)
+            return True
+        if current == ST_PROMO_SAFETY_CMD:
+            await self._finish_safety_cmd(chat_id, user, t)
+            return True
 
         if t in {__("menu.btn_status"), "وضعیت", "📊 وضعیت", __("status.btn_refresh")}:
             await self.show_status(chat_id, user)
@@ -279,27 +312,55 @@ class PanelController:
             __("menu.btn_discovery"),
             "کشف",
             "🧺 کشف",
+            "🔍 گروه‌یابی",
             __("discovery.btn_refresh"),
         }:
             await self.show_discovery(chat_id, user)
+            return True
+
+        # Discovery sub-menus
+        if t == __("discovery.btn_sub_pool"):
+            await self.tg.send_message(
+                chat_id, __("discovery.pool_header"), reply_markup=discovery_pool_keyboard()
+            )
+            return True
+        if t == __("discovery.btn_sub_inspect"):
+            await self.tg.send_message(
+                chat_id, __("discovery.inspect_header"), reply_markup=discovery_inspect_keyboard()
+            )
+            return True
+        if t == __("discovery.btn_sub_linkdir"):
+            await self.tg.send_message(
+                chat_id, __("discovery.linkdir_header"), reply_markup=discovery_linkdir_keyboard()
+            )
             return True
         if t in {__("menu.btn_promo"), "تبلیغ", "📣 تبلیغ", __("promo.btn_refresh")}:
             await self.show_promo(chat_id, user)
             return True
 
-        if t == __("discovery.btn_help"):
+        # Promo sub-menus
+        if t == __("promo.btn_sub_routes"):
             await self.tg.send_message(
-                chat_id,
-                __("discovery.help_full"),
-                reply_markup=discovery_menu_keyboard(),
+                chat_id, __("promo.routes_header"), reply_markup=promo_routes_keyboard()
             )
             return True
-        if t == __("promo.btn_help"):
+        if t == __("promo.btn_sub_safety"):
             await self.tg.send_message(
-                chat_id,
-                __("promo.help_full"),
-                reply_markup=promo_menu_keyboard(),
+                chat_id, __("promo.safety_header"), reply_markup=promo_safety_keyboard()
             )
+            return True
+
+        # Back from sub-menus → parent menu
+        if t == __("nav.btn_back"):
+            # Return to the most relevant parent based on context
+            if current.startswith("discovery_"):
+                await self.show_discovery(chat_id, user)
+            elif current.startswith("promo_"):
+                await self.show_promo(chat_id, user)
+            else:
+                await self.tg.send_message(
+                    chat_id, __("panel.cancelled"), reply_markup=main_keyboard()
+                )
             return True
 
         # Discovery pool
@@ -447,11 +508,41 @@ class PanelController:
         if t == __("promo.btn_route_pause"):
             await self._start_promo_pick(chat_id, user, intent="route_pause")
             return True
+        if t == __("promo.btn_route_resume"):
+            await self._start_promo_pick(chat_id, user, intent="route_resume")
+            return True
+        if t == __("promo.btn_route_mode"):
+            await self._start_promo_pick(chat_id, user, intent="route_mode")
+            return True
+        if t == __("promo.btn_group_remove"):
+            await self._start_promo_pick(chat_id, user, intent="group_remove")
+            return True
+        if t == __("promo.btn_groups"):
+            await self._start_promo_pick(chat_id, user, intent="groups")
+            return True
+        if t == __("promo.btn_safety_view"):
+            await self._start_promo_pick(chat_id, user, intent="safety_view")
+            return True
+        if t == __("promo.btn_safety_delay"):
+            await self._start_promo_pick(chat_id, user, intent="safety_delay")
+            return True
+        if t == __("promo.btn_safety_budget"):
+            await self._start_promo_pick(chat_id, user, intent="safety_budget")
+            return True
+        if t == __("promo.btn_safety_windows"):
+            await self._start_promo_pick(chat_id, user, intent="safety_windows")
+            return True
+        if t == __("promo.btn_safety_cooldown"):
+            await self._start_promo_pick(chat_id, user, intent="safety_cooldown")
+            return True
+        if t == __("promo.btn_safety_tz"):
+            await self._start_promo_pick(chat_id, user, intent="safety_tz")
+            return True
         if t == __("promo.btn_queue_status"):
             await self._start_promo_pick(chat_id, user, intent="promo_queue_status")
             return True
         if t == __("promo.btn_queue_clear"):
-            await self._start_promo_pick(chat_id, user, intent="promo_queue_clear")
+            await self._start_promo_pick(chat_id, user, intent="promo_queue_clear_ask")
             return True
         if t == __("promo.btn_safety_dump"):
             await self._start_promo_pick(chat_id, user, intent="promo_safety_dump")
@@ -619,7 +710,7 @@ class PanelController:
                 reply_markup=promo_menu_keyboard(),
             )
             return
-        if intent in {"route_remove", "route_pause"}:
+        if intent in {"route_remove", "route_pause", "route_resume"}:
             await UserState.set_state(
                 self.db,
                 tid,
@@ -629,6 +720,57 @@ class PanelController:
             await self.tg.send_message(
                 chat_id,
                 __("promo.ask_route_source"),
+                reply_markup=promo_menu_keyboard(),
+            )
+            return
+        if intent == "route_mode":
+            await UserState.set_state(
+                self.db, tid, ST_PROMO_ROUTE_MODE, {"account_id": aid}
+            )
+            await self.tg.send_message(
+                chat_id,
+                __("promo.ask_route_mode"),
+                reply_markup=promo_menu_keyboard(),
+            )
+            return
+        if intent == "group_remove":
+            await UserState.set_state(
+                self.db, tid, ST_PROMO_GROUP_REMOVE, {"account_id": aid}
+            )
+            await self.tg.send_message(
+                chat_id,
+                __("promo.ask_group_remove"),
+                reply_markup=promo_menu_keyboard(),
+            )
+            return
+        if intent == "groups":
+            await UserState.set_state(
+                self.db, tid, ST_PROMO_GROUPS, {"account_id": aid}
+            )
+            await self.tg.send_message(
+                chat_id,
+                __("promo.ask_groups"),
+                reply_markup=promo_menu_keyboard(),
+            )
+            return
+        if intent == "safety_view":
+            await UserState.clear(self.db, tid)
+            await self._show_safety_config(chat_id, user, aid)
+            return
+        safety_wizards = {
+            "safety_delay": "promo.ask_safety_delay",
+            "safety_budget": "promo.ask_safety_budget",
+            "safety_windows": "promo.ask_safety_windows",
+            "safety_cooldown": "promo.ask_safety_cooldown",
+            "safety_tz": "promo.ask_safety_tz",
+        }
+        if intent in safety_wizards:
+            await UserState.set_state(
+                self.db, tid, ST_PROMO_SAFETY_CMD, {"account_id": aid, "intent": intent}
+            )
+            await self.tg.send_message(
+                chat_id,
+                __(safety_wizards[intent]),
                 reply_markup=promo_menu_keyboard(),
             )
             return
@@ -646,6 +788,18 @@ class PanelController:
             await UserState.clear(self.db, tid)
             await self._dispatch_cache(
                 chat_id, user, aid, "promo_queue_status", panel="promo"
+            )
+            return
+        if intent == "promo_queue_clear_ask":
+            # Store account_id and ask for confirmation before clearing
+            await UserState.set_state(
+                self.db, tid, ST_PROMO_QUEUE_CLEAR_CONFIRM, {"account_id": aid}
+            )
+            from config.menus import queue_clear_confirm_keyboard
+            await self.tg.send_message(
+                chat_id,
+                __("cache.queue_clear_confirm", account_id=aid),
+                reply_markup=queue_clear_confirm_keyboard(),
             )
             return
         if intent == "promo_queue_clear":
@@ -742,7 +896,7 @@ class PanelController:
             result = await prof.promo_add_route(tid, aid, source, groups)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -778,12 +932,16 @@ class PanelController:
                 result = await prof.promo_set_route_paused(
                     tid, aid, source, paused=True
                 )
+            elif intent == "route_resume":
+                result = await prof.promo_set_route_paused(
+                    tid, aid, source, paused=False
+                )
             else:
                 await self.tg.send_message(chat_id, __("menu.unknown"))
                 return
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -811,7 +969,7 @@ class PanelController:
             result = await prof.promo_group_add(tid, aid, source, group)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -824,6 +982,166 @@ class PanelController:
                 module="promo_spread",
                 detail=str(route)[:300],
             ),
+            reply_markup=promo_menu_keyboard(),
+        )
+
+    async def _finish_route_mode(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str(state.context.get("account_id") or "")
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        try:
+            parts = (t or "").strip().split(None, 1)
+            if len(parts) < 2:
+                raise GitHubError("need source and mode")
+            source, mode = parts[0], parts[1].strip().lower()
+            if mode not in {"forward", "copy"}:
+                raise GitHubError("mode must be forward|copy")
+            result = await prof.promo_set_route_mode(tid, aid, source, mode)
+        except (AccountConflictError, GitHubError) as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=friendly_error(exc))
+            )
+            return
+        await UserState.clear(self.db, tid)
+        route = result.get("route") or {}
+        await self.tg.send_message(
+            chat_id,
+            __(
+                "profile.patch_done",
+                account_id=aid,
+                module="promo_spread",
+                detail=str(route)[:300],
+            ),
+            reply_markup=promo_menu_keyboard(),
+        )
+
+    async def _finish_group_remove(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str(state.context.get("account_id") or "")
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        try:
+            source, group = self._parse_group_line(t)
+            result = await prof.promo_group_remove(tid, aid, source, group)
+        except (AccountConflictError, GitHubError) as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=friendly_error(exc))
+            )
+            return
+        await UserState.clear(self.db, tid)
+        route = result.get("route") or {}
+        await self.tg.send_message(
+            chat_id,
+            __(
+                "profile.patch_done",
+                account_id=aid,
+                module="promo_spread",
+                detail=str(route)[:300],
+            ),
+            reply_markup=promo_menu_keyboard(),
+        )
+
+    async def _finish_groups_list(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str(state.context.get("account_id") or "")
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        source = (t or "").strip()
+        if source in {__("promo.btn_groups_all"), "همه", "all", "*"}:
+            source = None
+        elif self._is_bad_ref(source):
+            await self.tg.send_message(chat_id, __("pool.invalid_ref"))
+            return
+        try:
+            info = await prof.promo_route_groups(tid, aid, source)
+        except (AccountConflictError, GitHubError) as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=friendly_error(exc))
+            )
+            return
+        await UserState.clear(self.db, tid)
+        lines = "\n".join(info.get("lines") or ["—"])
+        if source:
+            body = __("promo.groups_one", source=info.get("source"), lines=lines)
+        else:
+            body = __(
+                "promo.groups_all",
+                count=info.get("route_count", 0),
+                lines=lines,
+            )
+        await self.tg.send_message(
+            chat_id, body, reply_markup=promo_menu_keyboard()
+        )
+
+    async def _finish_safety_cmd(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str(state.context.get("account_id") or "")
+        intent = str(state.context.get("intent") or "")
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        cmd_map = {
+            "safety_delay": lambda text: f"delay {text.strip()}",
+            "safety_budget": lambda text: f"budget {text.strip()}",
+            "safety_windows": lambda text: f"windows {text.strip()}",
+            "safety_cooldown": lambda text: f"cooldown {text.strip()}",
+            "safety_tz": lambda text: f"tz {text.strip()}",
+        }
+        builder = cmd_map.get(intent)
+        if not builder:
+            await UserState.clear(self.db, tid)
+            await self.tg.send_message(chat_id, __("menu.unknown"))
+            return
+        try:
+            result = await prof.promo_safety_command(tid, aid, builder(t))
+        except (AccountConflictError, GitHubError, ValueError) as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=friendly_error(exc))
+            )
+            return
+        await UserState.clear(self.db, tid)
+        lines = "\n".join(result.get("summary") or ["—"])
+        await self.tg.send_message(
+            chat_id,
+            __("promo.safety_done", account_id=aid, lines=lines),
+            reply_markup=promo_menu_keyboard(),
+        )
+
+    async def _show_safety_config(
+        self, chat_id: int, user: User, account_id: str
+    ) -> None:
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.missing_github"),
+                reply_markup=promo_menu_keyboard(),
+            )
+            return
+        tid = int(user.get("telegram_id"))
+        try:
+            info = await prof.promo_safety_config(tid, account_id)
+        except (AccountConflictError, GitHubError) as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=friendly_error(exc))
+            )
+            return
+        lines = "\n".join(info.get("summary") or ["—"])
+        await self.tg.send_message(
+            chat_id,
+            __("promo.safety_config", account_id=account_id, lines=lines),
             reply_markup=promo_menu_keyboard(),
         )
 
@@ -869,7 +1187,7 @@ class PanelController:
                 )
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
 
@@ -895,7 +1213,7 @@ class PanelController:
             desc = await prof.describe_module(tid, account_id, "promo_spread")
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await self.tg.send_message(
@@ -984,7 +1302,7 @@ class PanelController:
             return
         except GitHubError as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
 
@@ -1017,7 +1335,7 @@ class PanelController:
             result = await prof.set_budget(tid, aid, n)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -1052,7 +1370,7 @@ class PanelController:
             result = await prof.set_catchup(tid, aid, n)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -1079,7 +1397,7 @@ class PanelController:
             result = await prof.add_directory(tid, aid, t)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -1106,7 +1424,7 @@ class PanelController:
             result = await prof.remove_directory(tid, aid, t)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -1137,7 +1455,7 @@ class PanelController:
                 stale=counts.get("stale", 0),
             )
         except Exception as exc:
-            body = __("accounts.error", error=str(exc)[:200])
+            body = __("accounts.error", error=friendly_error(exc))
         await self.tg.send_message(
             chat_id, body, reply_markup=discovery_menu_keyboard()
         )
@@ -1164,7 +1482,7 @@ class PanelController:
         except GitHubError as exc:
             await self.tg.send_message(
                 chat_id,
-                __("accounts.error", error=str(exc)[:240]),
+                __("accounts.error", error=friendly_error(exc)),
                 reply_markup=discovery_menu_keyboard(),
             )
             return
@@ -1216,7 +1534,7 @@ class PanelController:
         except GitHubError as exc:
             await self.tg.send_message(
                 chat_id,
-                __("accounts.error", error=str(exc)[:240]),
+                __("accounts.error", error=friendly_error(exc)),
                 reply_markup=discovery_menu_keyboard(),
             )
             return
@@ -1263,7 +1581,7 @@ class PanelController:
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
                 chat_id,
-                __("accounts.error", error=str(exc)[:240]),
+                __("accounts.error", error=friendly_error(exc)),
                 reply_markup=kb,
             )
             return
@@ -1278,6 +1596,20 @@ class PanelController:
             ),
             reply_markup=kb,
         )
+
+    async def _finish_promo_queue_clear_confirm(
+        self, chat_id: int, user: User, t: str
+    ) -> None:
+        tid = int(user.get("telegram_id"))
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str((state.context or {}).get("account_id") or "")
+        await UserState.clear(self.db, tid)
+        if t != __("cache.queue_clear_btn_confirm"):
+            await self.tg.send_message(
+                chat_id, __("panel.cancelled"), reply_markup=promo_menu_keyboard()
+            )
+            return
+        await self._dispatch_cache(chat_id, user, aid, "promo_queue_clear", panel="promo")
 
     async def _pool_mutate(
         self, chat_id: int, user: User, t: str, *, action: str

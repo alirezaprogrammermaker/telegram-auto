@@ -29,6 +29,7 @@ MESSAGES: dict[str, str] = {
     "menu.btn_promo": "📣 تبلیغ",
     "menu.btn_forward": "📨 ارسال خودکار",
     "menu.btn_ops": "▶️ اجرا / توقف",
+    "menu.btn_automation": "🤖 خودکارسازی",
     "nav.btn_back": "⬅️ بازگشت",
     "menu.btn_help": "📖 راهنما",
     "menu.btn_settings": "⚙️ تنظیمات",
@@ -370,12 +371,14 @@ MESSAGES: dict[str, str] = {
     "status.header": "📊 <b>وضعیت اکانت‌های تو</b>\n────────────",
     "status.line": (
         "• <code>{id}</code> [{on}] {role} | {status}\n"
+        "  {live}\n"
         "  GHA: {run}\n"
         "  {url}"
     ),
     "status.footer": (
         "────────────\n"
-        "📦 Pool: از منوی کشف → وضعیت/لیست (ورک‌فلو GHA + گزارش به همین چت).\n"
+        "📡 آمار و عمق صف از heartbeat زنده userbot می‌آید (بدون GHA).\n"
+        "📦 Pool: از منوی کشف → وضعیت/لیست.\n"
         "هشدار FloodWait/circuit هم به همین ربات می‌آید."
     ),
     "status.btn_refresh": "🔄 تازه‌سازی وضعیت",
@@ -893,6 +896,61 @@ MESSAGES: dict[str, str] = {
         "اول از مدیریت → فعال‌سازی، بعد اجرا."
     ),
     "ops.cancelled": "عملیات لغو شد.",
+    # automation watchdog
+    "auto.menu": (
+        "🤖 <b>خودکارسازی عملیات</b>\n"
+        "────────────\n"
+        "پایش سلامت اکانت‌ها، ping probe، و restart کنترل‌شده.\n"
+        "این بخش با policy کار می‌کند تا رفتار محافظه‌کارانه و امن بماند."
+    ),
+    "auto.btn_status": "📊 وضعیت خودکارسازی",
+    "auto.btn_run_now": "▶️ اجرای بررسی الان",
+    "auto.btn_enable": "🟢 روشن",
+    "auto.btn_disable": "🔴 خاموش",
+    "auto.btn_thresholds": "⏱ آستانه‌ها",
+    "auto.cancelled": "❌ عملیات خودکارسازی لغو شد.",
+    "auto.running": "⏳ در حال اجرای watchdog و ارزیابی سلامت اکانت‌ها...",
+    "auto.toggled": "✅ Automation policy روی <code>{state}</code> قرار گرفت.\nآخرین به‌روزرسانی: {updated_at}",
+    "auto.ask_thresholds": (
+        "۵ عدد بفرست:\n"
+        "<code>warn ping restart cooldown max_restarts</code>\n\n"
+        "وضعیت فعلی:\n"
+        "warn={warn} دقیقه\n"
+        "ping={ping} دقیقه\n"
+        "restart={restart} دقیقه\n"
+        "cooldown={cooldown} دقیقه\n"
+        "max_restarts={max_restarts} در ۲۴ ساعت"
+    ),
+    "auto.bad_thresholds": "ورودی نامعتبر است. دقیقا ۵ عدد بفرست: warn ping restart cooldown max_restarts",
+    "auto.thresholds_saved": (
+        "✅ policy ذخیره شد.\n"
+        "warn={warn}m | ping={ping}m | restart={restart}m | cooldown={cooldown}m | max={max_restarts}"
+    ),
+    "auto.status_header": "📊 <b>وضعیت خودکارسازی</b>",
+    "auto.status_policy": (
+        "policy={enabled}\n"
+        "warn={warn}m | ping={ping}m | restart={restart}m | cooldown={cooldown}m | max/day={max_restarts}"
+    ),
+    "auto.status_account": "• <code>{account_id}</code> [{role}] hb={hb_status} age={age}m → {classification}",
+    "auto.status_recent": "<b>اقدام‌های اخیر:</b>",
+    "auto.status_recent_line": "• {action} روی <code>{account_id}</code> → {status} ({reason})",
+    "auto.run_summary_header": "✅ <b>خلاصه اجرای watchdog</b>",
+    "auto.run_summary_counts": "checked={checked} | warned={warned} | pinged={pinged} | restarted={restarted} | skipped={skipped}",
+    "auto.run_summary_line": "• <code>{account_id}</code> → {action} ({reason})",
+    "auto.warn_msg": (
+        "⚠️ اکانت <code>{account_id}</code> heartbeat تازه ندارد.\n"
+        "age={age_minutes} دقیقه | status={status}\n"
+        "فعلا فقط هشدار ثبت شد."
+    ),
+    "auto.ping_msg": (
+        "📡 برای اکانت <code>{account_id}</code> یک ping probe خودکار صف شد.\n"
+        "آخرین heartbeat حدود {age_minutes} دقیقه قبل بوده."
+    ),
+    "auto.restart_msg": (
+        "♻️ برای اکانت <code>{account_id}</code> restart خودکار اجرا شد.\n"
+        "heartbeat age={age_minutes} دقیقه\n"
+        "run_id={run_id}"
+    ),
     # smart assignment engine
     "assign.btn_menu": "🏭 تخصیص هوشمند",
     "assign.btn_forward": "📨 فوروارد جدید",

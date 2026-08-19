@@ -1,6 +1,7 @@
 from urllib.parse import urlparse
 
 from app.Http.Controllers.InternalAlertsController import InternalAlertsController
+from app.Http.Controllers.InternalAutomationController import InternalAutomationController
 from app.Http.Controllers.InternalCacheController import InternalCacheController
 from app.Http.Controllers.InternalCommandsController import InternalCommandsController
 from app.Http.Controllers.InternalLinkDirController import InternalLinkDirController
@@ -48,6 +49,9 @@ class Default(WorkerEntrypoint):
         if path == "/internal/alerts" and method == "POST":
             return await InternalAlertsController(self.env).handle(request)
 
+        if path == "/internal/automation/run" and method in {"GET", "POST"}:
+            return await InternalAutomationController(self.env).handle(request)
+
         if path.startswith("/internal/linkdir/") and method in {"GET", "POST"}:
             action = path[len("/internal/linkdir/") :]
             return await InternalLinkDirController(self.env).handle(request, action)
@@ -59,3 +63,4 @@ class Default(WorkerEntrypoint):
         return Response.json(
             {"ok": False, "error": __("error.not_found")}, status=404
         )
+
