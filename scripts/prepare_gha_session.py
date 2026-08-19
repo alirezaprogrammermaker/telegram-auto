@@ -72,6 +72,20 @@ def _write_github_env(key: str, value: str) -> None:
         fh.write(f"{key}<<EOF\n{value}\nEOF\n")
 
 
+def _decode_b64_text(raw: str) -> str | None:
+    cleaned = "".join(raw.split())
+    if not cleaned:
+        return None
+    padded = cleaned + "=" * (-len(cleaned) % 4)
+    try:
+        return base64.b64decode(padded, validate=True).decode("utf-8")
+    except (binascii.Error, ValueError, UnicodeDecodeError):
+        try:
+            return base64.b64decode(padded, validate=False).decode("utf-8")
+        except (binascii.Error, ValueError, UnicodeDecodeError):
+            return None
+
+
 def _parse_portable_payload(raw: str) -> dict | None:
     """Return a portable StringSession payload, or None for legacy sqlite secrets."""
     raw = raw.strip()
@@ -84,10 +98,12 @@ def _parse_portable_payload(raw: str) -> dict | None:
     except json.JSONDecodeError:
         pass
 
-    try:
-        candidates.append(json.loads(base64.b64decode(raw, validate=True)))
-    except (json.JSONDecodeError, binascii.Error, ValueError):
-        pass
+    decoded_text = _decode_b64_text(raw)
+    if decoded_text:
+        try:
+            candidates.append(json.loads(decoded_text))
+        except json.JSONDecodeError:
+            pass
 
     for candidate in candidates:
         if not isinstance(candidate, dict):
@@ -121,6 +137,8 @@ def main() -> int:
         _write_skip(True)
         return 0
 
+    print(f"session_secret_len={len(raw)}")
+
     session = ROOT / f"{session_name}.session"
     restored_format = "legacy_sqlite_b64"
     payload = _parse_portable_payload(raw)
@@ -131,7 +149,9 @@ def main() -> int:
         restored_format = "telethon_string_session"
     else:
         try:
-            blob = base64.b64decode(raw, validate=True)
+            cleaned = "".join(raw.split())
+            padded = cleaned + "=" * (-len(cleaned) % 4)
+            blob = base64.b64decode(padded, validate=True)
         except (binascii.Error, ValueError):
             print(f"::warning::Unrecognized session secret for account={account}")
             _write_skip(True)
