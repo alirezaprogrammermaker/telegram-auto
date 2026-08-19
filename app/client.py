@@ -1,7 +1,10 @@
 """Telegram client factory."""
 from __future__ import annotations
 
+import os
+
 from telethon import TelegramClient
+from telethon.sessions import StringSession
 
 from app.config import AppConfig
 
@@ -13,9 +16,12 @@ APP_VERSION = "0.1.0"
 
 
 def build_client(config: AppConfig) -> TelegramClient:
-    session_path = str(config.root / config.session_name)
+    session_string = (os.environ.get("TELEGRAM_SESSION_STRING") or "").strip()
+    session: str | StringSession = str(config.root / config.session_name)
+    if session_string:
+        session = StringSession(session_string)
     return TelegramClient(
-        session_path,
+        session,
         config.api_id,
         config.api_hash,
         device_model=DEVICE_MODEL,

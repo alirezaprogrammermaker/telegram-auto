@@ -37,7 +37,7 @@ def _migrate_legacy_flat_data(account_data: Path) -> None:
         dst = account_data / name
         if src.exists() and src.is_file() and not dst.exists():
             shutil.move(str(src), str(dst))
-            print(f"migrated legacy {name} → {dst}")
+            print(f"migrated legacy {name} -> {dst}")
 
 
 def _account_enabled(account: str) -> bool | None:
@@ -63,6 +63,14 @@ def _write_skip(skip: bool) -> None:
     print(f"skip={'true' if skip else 'false'}")
 
 
+def _write_github_env(key: str, value: str) -> None:
+    out = os.environ.get("GITHUB_ENV")
+    if not out:
+        return
+    with open(out, "a", encoding="utf-8") as fh:
+        fh.write(f"{key}<<EOF\n{value}\nEOF\n")
+
+
 def main() -> int:
     account = (os.environ.get("ACCOUNT_ID") or "default").strip()
     session_name = (os.environ.get("SESSION_NAME") or "easy_seen").strip() or "easy_seen"
@@ -86,8 +94,28 @@ def main() -> int:
         return 0
 
     session = ROOT / f"{session_name}.session"
-    session.write_bytes(base64.b64decode(raw))
-    print(f"account={account} session={session.name} bytes={session.stat().st_size} data={data}")
+    restored_format = "legacy_sqlite_b64"
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        payload = None
+
+    if isinstance(payload, dict) and payload.get("format") == "telethon_string_session":
+        session_string = str(payload.get("session") or "").strip()
+        if not session_string:
+            print(f"::warning::Empty StringSession payload for account={account}")
+            _write_skip(True)
+            return 0
+        _write_github_env("TELEGRAM_SESSION_STRING", session_string)
+        session.touch()
+        restored_format = "telethon_string_session"
+    else:
+        session.write_bytes(base64.b64decode(raw))
+
+    print(
+        f"account={account} session={session.name} bytes={session.stat().st_size} "
+        f"data={data} format={restored_format}"
+    )
     _write_skip(False)
     return 0
 

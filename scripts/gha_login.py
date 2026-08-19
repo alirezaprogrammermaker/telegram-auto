@@ -24,6 +24,7 @@ from telethon.errors import (  # noqa: E402
     PhoneCodeInvalidError,
     SessionPasswordNeededError,
 )
+from telethon.sessions import StringSession  # noqa: E402
 
 from app.client import build_client  # noqa: E402
 from app.config import load_app_config  # noqa: E402
@@ -42,6 +43,28 @@ def _mask(s: str) -> str:
     if len(s) <= 4:
         return "***"
     return s[:2] + "***" + s[-2:]
+
+
+async def _portable_session_payload() -> dict:
+    """Return a portable StringSession payload from the current authorized login."""
+    config = load_app_config()
+    tg = build_client(config)
+    await tg.connect()
+    try:
+        if not await tg.is_user_authorized():
+            return {
+                "status": "failed",
+                "error": f"session_not_authorized:{config.session_name}",
+            }
+        session_string = StringSession.save(tg.session)
+        return {
+            "status": "ok",
+            "format": "telethon_string_session",
+            "session": session_string,
+            "session_name": config.session_name,
+        }
+    finally:
+        await tg.disconnect()
 
 
 async def cmd_send(phone: str) -> dict:
@@ -145,7 +168,10 @@ def cmd_export_secret(secret_name: str) -> dict:
             "error": "GH_TOKEN/GITHUB_TOKEN missing — set REPO_SECRETS_TOKEN secret",
         }
 
-    encoded = base64.b64encode(session_file.read_bytes()).decode("ascii")
+    portable = asyncio.run(_portable_session_payload())
+    if portable.get("status") != "ok":
+        return portable
+    encoded = json.dumps(portable, ensure_ascii=True)
     # Pipe body on stdin so it never appears in process argv / logs.
     env = os.environ.copy()
     proc = subprocess.run(
@@ -167,6 +193,7 @@ def cmd_export_secret(secret_name: str) -> dict:
         "secret_name": secret_name,
         "session": config.session_name,
         "bytes": session_file.stat().st_size,
+        "format": "telethon_string_session",
     }
 
 
