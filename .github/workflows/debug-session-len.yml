@@ -1,0 +1,28 @@
+name: debug-session-len
+
+on:
+  workflow_dispatch:
+    inputs:
+      account_id:
+        description: "Account id (e.g. likyab1)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  direct:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Direct secret length
+        env:
+          SEC: ${{ secrets.TELEGRAM_SESSION_B64_LIKYAB1 }}
+        if: inputs.account_id == 'likyab1'
+        run: python3 -c "import os; print('direct_secret_len', len(os.environ.get('SEC','')))"
+
+  via-reusable:
+    if: inputs.account_id == 'likyab1'
+    uses: ./.github/workflows/debug-session-len-call.yml
+    secrets:
+      TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64_LIKYAB1 }}
