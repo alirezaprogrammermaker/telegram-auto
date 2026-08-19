@@ -64,4 +64,9 @@ def format_live_metrics(row: dict) -> str:
             f"block={stats.get('blocked', 0)} "
             f"pub={stats.get('published_scheduled', 0)}"
         )
+    circuit = row.get("promo_circuit")
+    if isinstance(circuit, dict) and circuit.get("is_open"):
+        reason = circuit.get("pause_reason") or "circuit"
+        until = circuit.get("paused_until") or "?"
+        parts.append(f"🛡 promo circuit OPEN تا {until} ({reason})")
     return "\n  ".join(parts)

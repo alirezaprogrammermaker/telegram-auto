@@ -64,6 +64,9 @@ MESSAGES: dict[str, str] = {
     # ── settings sub-actions ──────────────────────────────────────────
     "settings.btn_demote": "👤 حذف ادمین",
     "settings.btn_stats": "📊 آمار اکانت",
+    "settings.btn_reply_text": "💬 متن auto-reply",
+    "settings.btn_whitelist": "🪪 whitelist",
+    "settings.btn_digest": "📰 خلاصه فوری",
     "settings.btn_modules": "🔧 ماژول‌ها",
     "settings.demote_pick": (
         "👤 <b>حذف ادمین</b>\n"
@@ -76,6 +79,46 @@ MESSAGES: dict[str, str] = {
     "settings.demote_done": "✅ {label} (<code>{telegram_id}</code>) به user تبدیل شد.",
     "settings.stats_pick": "📊 ID اکانت را برای دریافت آمار وارد کن:",
     "settings.stats_no_accounts": "هیچ اکانتی ثبت نشده.",
+    "settings.reply_pick": "ID اکانت را برای تنظیم متن auto-reply وارد کن:",
+    "settings.reply_no_accounts": "هیچ اکانتی ثبت نشده.",
+    "settings.reply_ask": (
+        "متن جدید auto-reply را بفرست.\n"
+        "اکانت: <code>{account_id}</code>\n"
+        "متن فعلی:\n<code>{current}</code>"
+    ),
+    "settings.reply_done": (
+        "✅ متن auto-reply ذخیره شد.\n"
+        "اکانت: <code>{account_id}</code>\n"
+        "متن جدید:\n<code>{reply_text}</code>"
+    ),
+    "settings.whitelist_pick": "ID اکانت را برای مدیریت whitelist وارد کن:",
+    "settings.whitelist_no_accounts": "هیچ اکانتی ثبت نشده.",
+    "settings.whitelist_ask": (
+        "دستور whitelist را بفرست:\n"
+        "<code>add 123456</code>\n"
+        "<code>remove 123456</code>\n"
+        "<code>list</code>\n\n"
+        "اکانت: <code>{account_id}</code>\n"
+        "وضعیت فعلی: {current}"
+    ),
+    "settings.whitelist_bad": "فرمت نامعتبر است. از add/remove/list استفاده کن.",
+    "settings.whitelist_done": (
+        "✅ whitelist به‌روزرسانی شد.\n"
+        "اکانت: <code>{account_id}</code>\n"
+        "فهرست: {current}"
+    ),
+    "settings.digest_pick": "ID اکانت را برای خلاصه فوری وارد کن:",
+    "settings.digest_no_accounts": "هیچ اکانتی ثبت نشده.",
+    "settings.digest_live": (
+        "📰 <b>خلاصه فوری</b> — <code>{account_id}</code>\n"
+        "heartbeat: <code>{heartbeat}</code>\n"
+        "stats: fwd=<code>{forwarded}</code> block=<code>{blocked}</code> queued=<code>{queued}</code> pub=<code>{published}</code>\n"
+        "queue: forward=<code>{forward_queue}</code> promo=<code>{promo_queue}</code>"
+    ),
+    "settings.digest_stale": (
+        "برای <code>{account_id}</code> heartbeat زنده در دسترس نیست.\n"
+        "از «📊 آمار اکانت» برای dump آفلاین/GHA استفاده کن."
+    ),
     "settings.modules_pick": "🔧 ID اکانت را برای مدیریت ماژول‌ها وارد کن:",
     "settings.modules_no_accounts": "هیچ اکانتی ثبت نشده.",
     "settings.modules_ask_action": (
@@ -674,6 +717,8 @@ MESSAGES: dict[str, str] = {
     "forward.btn_filter_prefix": "📝 پیشوند متن",
     "forward.btn_filter_suffix": "📝 پسوند متن",
     "forward.btn_filter_block": "🚫 کلمات مسدود",
+    "forward.btn_filter_allow": "✅ allow-list",
+    "forward.btn_filter_regex": ".* regex",
     "forward.btn_filter_clear": "🧹 پاک‌سازی فیلتر",
     "forward.btn_schedule_view": "📋 وضعیت زمان‌بندی",
     "forward.btn_schedule_on": "✅ زمان‌بندی: روشن",
@@ -727,6 +772,17 @@ MESSAGES: dict[str, str] = {
         "<code>@source block add کلمه</code>\n"
         "<code>@source block remove کلمه</code>\n"
         "<code>@source block on|off|clear</code>"
+    ),
+    "forward.ask_filter_allow": (
+        "فرمت:\n"
+        "<code>@source allow add کلمه</code>\n"
+        "<code>@source allow remove کلمه</code>\n"
+        "<code>@source allow on|off|clear</code>"
+    ),
+    "forward.ask_filter_regex": (
+        "فرمت:\n"
+        "<code>@source regex set pattern</code>\n"
+        "<code>@source regex on|off|clear</code>"
     ),
     "forward.ask_schedule_tz": (
         "فرمت:\n"
@@ -870,19 +926,26 @@ MESSAGES: dict[str, str] = {
     "ops.btn_cancel_run": "⏹ کنسل",
     "ops.btn_restart": "🔁 ریستارت",
     "ops.btn_merge": "📦 ادغام pool",
+    "ops.btn_sync_promo": "🔄 sync گروه‌های promo",
     "ops.btn_confirm_dispatch": "✅ تأیید اجرا",
     "ops.btn_confirm_cancel": "✅ تأیید کنسل",
     "ops.btn_confirm_restart": "✅ تأیید ریستارت",
     "ops.btn_confirm_merge": "✅ تأیید ادغام pool",
+    "ops.btn_confirm_sync_promo": "✅ تأیید sync promo",
     "ops.action_dispatch": "اجرا",
     "ops.action_cancel": "کنسل",
     "ops.action_restart": "ریستارت",
     "ops.action_merge": "ادغام pool",
+    "ops.action_sync_promo": "sync گروه‌های promo",
     "ops.pick": "اکانت را برای «{action}» انتخاب کن:",
     "ops.confirm_account": "تأیید «{action}» برای <code>{account_id}</code>؟",
     "ops.confirm_merge": (
         "ادغام raw_links همه اکانت‌ها داخل group_pool روی GHA؟\n"
         "ورک‌فلو: <code>merge-group-pool.yml</code>"
+    ),
+    "ops.confirm_sync_promo": (
+        "همگام‌سازی گروه‌های promo-ready روی GHA اجرا شود؟\n"
+        "ورک‌فلو: <code>sync-promo-groups.yml</code>"
     ),
     "ops.working": "⏳ در حال «{action}» روی GitHub Actions...",
     "ops.done": (
@@ -1007,7 +1070,10 @@ MESSAGES: dict[str, str] = {
     "assign.list_header": "📋 <b>تخصیص‌های فعال</b> ({count} مورد)",
     "assign.list_empty": "هیچ تخصیص فعالی وجود ندارد.",
     "assign.list_remove_hint": "برای حذف: دکمه «🗑 حذف تخصیص» را بزن و ID را بفرست.",
-    "assign.remove_done": "✅ تخصیص <code>{assignment_id}</code> حذف شد.\n(پروفایل GitHub تغییر نکرد — برای حذف مسیر از منوی فوروارد/پرومو استفاده کن.)",
+    "assign.remove_done": (
+        "✅ تخصیص <code>{assignment_id}</code> حذف شد.\n"
+        "پاک‌سازی پروفایل GitHub: <code>{cleanup}</code>"
+    ),
     # command control panel
     "cmd.btn_menu": "🎮 کنترل زنده",
     "cmd.btn_send": "📤 ارسال دستور",

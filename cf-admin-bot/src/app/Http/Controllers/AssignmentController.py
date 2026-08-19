@@ -518,7 +518,7 @@ class AssignmentController:
             await self._no_github(chat_id)
             return
         try:
-            await svc.remove(assignment_id, user_id=tid)
+            result = await svc.remove(assignment_id, user_id=tid)
         except Exception as exc:
             await UserState.clear(self.db, tid)
             await self.tg.send_message(
@@ -530,7 +530,11 @@ class AssignmentController:
         await UserState.clear(self.db, tid)
         await self.tg.send_message(
             chat_id,
-            __("assign.remove_done", assignment_id=assignment_id),
+            __(
+                "assign.remove_done",
+                assignment_id=assignment_id,
+                cleanup="بله" if result.get("cleaned_profile") else "خیر",
+            ),
             reply_markup=_assign_main_keyboard(),
         )
 

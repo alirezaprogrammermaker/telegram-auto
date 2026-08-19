@@ -24,6 +24,7 @@ Public API (called from AssignmentController and AgentCommandBus)
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import json
 from typing import Any
 
 from app.Models.Account import Account
@@ -105,6 +106,7 @@ class AssignmentService:
         destination: str,
         *,
         auto_dispatch: bool = True,
+        exclude_account_ids: set[str] | None = None,
     ) -> AssignmentResult:
         """Assign a forward route to the best eligible account.
 
@@ -119,7 +121,9 @@ class AssignmentService:
         if not source_ref or not dest_ref:
             raise ValueError("source and destination must be non-empty refs")
 
-        winner, context = await self._run_engine(user_id, "forward", source_ref)
+        winner, context = await self._run_engine(
+            user_id, "forward", source_ref, exclude_account_ids=exclude_account_ids
+        )
 
         await self._profile.forward_add_route(
             user_id, winner.account_id, source_ref, dest_ref
@@ -163,6 +167,7 @@ class AssignmentService:
         groups: list[str],
         *,
         auto_dispatch: bool = True,
+        exclude_account_ids: set[str] | None = None,
     ) -> AssignmentResult:
         """Assign a promo route to the best eligible account."""
         source_ref = display_ref(source)
@@ -172,7 +177,9 @@ class AssignmentService:
         if not groups_clean:
             raise ValueError("at least one group is required")
 
-        winner, context = await self._run_engine(user_id, "promo", source_ref)
+        winner, context = await self._run_engine(
+            user_id, "promo", source_ref, exclude_account_ids=exclude_account_ids
+        )
 
         groups_csv = ",".join(groups_clean)
         await self._profile.promo_add_route(
@@ -233,18 +240,120 @@ class AssignmentService:
     # Public: remove
     # ------------------------------------------------------------------
 
-    async def remove(self, assignment_id: str, *, user_id: int) -> None:
-        """Soft-delete an assignment record (does not remove from GitHub profile).
-
-        Profile clean-up should be done via ProfileConfigService separately
-        if the caller also wants to stop forwarding/promo on the account.
-        """
+    async def remove(
+        self,
+        assignment_id: str,
+        *,
+        user_id: int,
+        cleanup_profile: bool = True,
+        auto_dispatch: bool = True,
+    ) -> dict[str, Any]:
+        """Soft-delete an assignment record and optionally clean profile state."""
         row = await Assignment.find(self.db, assignment_id)
         if not row:
             raise AssignmentNotFoundError(assignment_id)
         if str(row.get("user_id")) != str(user_id):
             raise PermissionError("not_your_assignment")
+        account_id = str(row.get("account_id") or "")
+        task_type = str(row.get("task_type") or "")
+        source = str(row.get("source") or "")
+        target = row.get("target")
+        cleaned = False
+        dispatch_info = None
+        if cleanup_profile:
+            if task_type == "forward":
+                await self._profile.forward_remove_route(user_id, account_id, source)
+                cleaned = True
+            elif task_type == "promo":
+                groups: list[str] = []
+                if isinstance(target, str):
+                    try:
+                        parsed = json.loads(target)
+                        if isinstance(parsed, list):
+                            groups = [str(x) for x in parsed if str(x).strip()]
+                    except Exception:
+                        groups = []
+                if groups:
+                    for group in groups:
+                        await self._profile.promo_group_remove(
+                            user_id, account_id, source, group
+                        )
+                else:
+                    await self._profile.promo_remove_route(user_id, account_id, source)
+                cleaned = True
         await Assignment.remove(self.db, assignment_id)
+        if auto_dispatch and cleaned and self.runner:
+            try:
+                dispatch_info = await self.runner.dispatch(user_id, account_id)
+            except Exception:
+                dispatch_info = None
+        return {
+            "assignment_id": assignment_id,
+            "account_id": account_id,
+            "task_type": task_type,
+            "source": source,
+            "cleaned_profile": cleaned,
+            "dispatch_info": dispatch_info,
+        }
+
+    async def reassign_account(
+        self,
+        user_id: int,
+        failed_account_id: str,
+        *,
+        auto_dispatch: bool = True,
+    ) -> dict[str, Any]:
+        rows = await Assignment.list_for_account(
+            self.db, failed_account_id, status="active", limit=500
+        )
+        moved: list[dict[str, Any]] = []
+        for row in rows:
+            if str(row.get("user_id") or "") != str(user_id):
+                continue
+            task_type = str(row.get("task_type") or "")
+            source = str(row.get("source") or "")
+            if task_type == "forward":
+                destination = str(row.get("target") or "")
+                result = await self.assign_forward(
+                    user_id,
+                    source,
+                    destination,
+                    auto_dispatch=auto_dispatch,
+                    exclude_account_ids={failed_account_id},
+                )
+            elif task_type == "promo":
+                target = str(row.get("target") or "")
+                try:
+                    groups = json.loads(target)
+                except Exception:
+                    groups = []
+                if not isinstance(groups, list) or not groups:
+                    continue
+                result = await self.assign_promo(
+                    user_id,
+                    source,
+                    [str(x) for x in groups],
+                    auto_dispatch=auto_dispatch,
+                    exclude_account_ids={failed_account_id},
+                )
+            else:
+                continue
+            await self.remove(
+                str(row.get("id")),
+                user_id=user_id,
+                cleanup_profile=True,
+                auto_dispatch=auto_dispatch,
+            )
+            moved.append(
+                {
+                    "old_assignment_id": str(row.get("id") or ""),
+                    "new_assignment_id": result.assignment_id,
+                    "source": source,
+                    "task_type": task_type,
+                    "new_account_id": result.account_id,
+                }
+            )
+        return {"moved": moved, "count": len(moved)}
 
     # ------------------------------------------------------------------
     # Public: list / load
@@ -272,10 +381,17 @@ class AssignmentService:
     # ------------------------------------------------------------------
 
     async def _run_engine(
-        self, user_id: int, task_type: str, source: str
+        self,
+        user_id: int,
+        task_type: str,
+        source: str,
+        *,
+        exclude_account_ids: set[str] | None = None,
     ) -> tuple[ScoredAccount, AssignmentContext]:
         context = await self._build_context(user_id, task_type, source)
-        accounts = await self._fetch_accounts(user_id)
+        accounts = await self._fetch_accounts(
+            user_id, exclude_account_ids=exclude_account_ids
+        )
         account_dicts = [a.to_view() for a in accounts]
 
         ranked = self.engine.rank(account_dicts, context)
@@ -321,5 +437,11 @@ class AssignmentService:
             max_routes_per_account=MAX_ROUTES_PER_ACCOUNT,
         )
 
-    async def _fetch_accounts(self, user_id: int) -> list[Account]:
-        return await Account.for_user(self.db, user_id)
+    async def _fetch_accounts(
+        self, user_id: int, *, exclude_account_ids: set[str] | None = None
+    ) -> list[Account]:
+        rows = await Account.for_user(self.db, user_id)
+        blocked = {str(x) for x in (exclude_account_ids or set()) if str(x)}
+        if not blocked:
+            return rows
+        return [row for row in rows if str(row.get("id") or "") not in blocked]

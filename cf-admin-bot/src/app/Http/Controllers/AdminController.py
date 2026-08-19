@@ -12,9 +12,11 @@ from app.Http.Controllers.PanelController import PanelController
 from app.Models.User import User
 from app.Models.UserState import UserState
 from app.Services.GitHubService import GitHubError
+from app.Services.ProfileConfigService import ProfileConfigService
 from app.Services.RunOrchestratorService import RunOrchestratorService
+from app.Services.StatusService import StatusService
 from app.Services.TelegramService import TelegramService
-from app.Support.GithubFactory import make_github
+from app.Support.GithubFactory import make_github, make_scaffold
 from app.Support.ErrorFormat import friendly_error
 from app.Support.Lang import __
 from config.bot import BotConfig
@@ -22,6 +24,11 @@ from config.menus import main_keyboard, settings_keyboard
 
 ST_SETTINGS_DEMOTE = "settings_demote"
 ST_SETTINGS_STATS = "settings_stats"
+ST_SETTINGS_REPLY_PICK = "settings_reply_pick"
+ST_SETTINGS_REPLY_TEXT = "settings_reply_text"
+ST_SETTINGS_WHITELIST_PICK = "settings_whitelist_pick"
+ST_SETTINGS_WHITELIST_EDIT = "settings_whitelist_edit"
+ST_SETTINGS_DIGEST = "settings_digest"
 ST_SETTINGS_MODULES = "settings_modules"
 
 
@@ -44,6 +51,15 @@ class AdminController:
         if not gh:
             return None
         return RunOrchestratorService(self.db, gh)
+
+    def _profile(self) -> ProfileConfigService | None:
+        scaffold = make_scaffold(self.config)
+        if not scaffold:
+            return None
+        return ProfileConfigService(self.db, scaffold)
+
+    def _status(self) -> StatusService:
+        return StatusService(self.db, make_github(self.config))
 
     async def welcome(self, chat_id: int, user: User) -> None:
         await UserState.clear(self.db, int(user.get("telegram_id")))
@@ -115,6 +131,21 @@ class AdminController:
         if current == ST_SETTINGS_STATS:
             await self._finish_stats(chat_id, user, t)
             return
+        if current == ST_SETTINGS_REPLY_PICK:
+            await self._finish_reply_pick(chat_id, user, t)
+            return
+        if current == ST_SETTINGS_REPLY_TEXT:
+            await self._finish_reply_text(chat_id, user, t)
+            return
+        if current == ST_SETTINGS_WHITELIST_PICK:
+            await self._finish_whitelist_pick(chat_id, user, t)
+            return
+        if current == ST_SETTINGS_WHITELIST_EDIT:
+            await self._finish_whitelist_edit(chat_id, user, t)
+            return
+        if current == ST_SETTINGS_DIGEST:
+            await self._finish_digest(chat_id, user, t)
+            return
         if current == ST_SETTINGS_MODULES:
             await self._finish_modules(chat_id, user, t)
             return
@@ -156,6 +187,15 @@ class AdminController:
             return
         if t == __("settings.btn_stats"):
             await self._start_stats(chat_id, user)
+            return
+        if t == __("settings.btn_reply_text"):
+            await self._start_reply_text(chat_id, user)
+            return
+        if t == __("settings.btn_whitelist"):
+            await self._start_whitelist(chat_id, user)
+            return
+        if t == __("settings.btn_digest"):
+            await self._start_digest(chat_id, user)
             return
         if t == __("settings.btn_modules"):
             await self._start_modules(chat_id, user)
@@ -222,6 +262,216 @@ class AdminController:
         await self.tg.send_message(
             chat_id,
             __("settings.demote_done", label=label, telegram_id=target_id),
+            reply_markup=settings_keyboard(),
+        )
+
+    # ------------------------------------------------------------------
+    # Settings: auto_reply text
+    # ------------------------------------------------------------------
+
+    async def _start_reply_text(self, chat_id: int, user: User) -> None:
+        tid = int(user.get("telegram_id"))
+        from app.Services.AccountService import AccountService
+
+        rows = await AccountService(self.db).list_for_user(tid)
+        if not rows:
+            await self.tg.send_message(
+                chat_id, __("settings.reply_no_accounts"), reply_markup=settings_keyboard()
+            )
+            return
+        ids = [str(r.get("id")) for r in rows[:24] if r.get("id")]
+        await UserState.set_state(self.db, tid, ST_SETTINGS_REPLY_PICK, {})
+        from config.menus import accounts_pick_keyboard
+        await self.tg.send_message(
+            chat_id, __("settings.reply_pick"), reply_markup=accounts_pick_keyboard(ids)
+        )
+
+    async def _finish_reply_pick(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        from app.Services.AccountScaffoldService import validate_account_id
+
+        aid = validate_account_id(t)
+        if not aid:
+            await self.tg.send_message(chat_id, __("accounts.invalid_id"))
+            return
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        try:
+            cfg = await prof.auto_reply_config(tid, aid)
+        except Exception as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=friendly_error(exc)), reply_markup=settings_keyboard()
+            )
+            return
+        await UserState.set_state(self.db, tid, ST_SETTINGS_REPLY_TEXT, {"account_id": aid})
+        current = str(cfg.get("reply_text") or "—")[:500]
+        await self.tg.send_message(
+            chat_id,
+            __("settings.reply_ask", account_id=aid, current=current),
+            reply_markup=settings_keyboard(),
+        )
+
+    async def _finish_reply_text(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str(state.context.get("account_id") or "")
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        try:
+            result = await prof.auto_reply_set_text(tid, aid, t)
+        except Exception as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=friendly_error(exc)), reply_markup=settings_keyboard()
+            )
+            return
+        await UserState.clear(self.db, tid)
+        await self.tg.send_message(
+            chat_id,
+            __("settings.reply_done", account_id=aid, reply_text=result.get("reply_text") or ""),
+            reply_markup=settings_keyboard(),
+        )
+
+    # ------------------------------------------------------------------
+    # Settings: auto_reply whitelist
+    # ------------------------------------------------------------------
+
+    async def _start_whitelist(self, chat_id: int, user: User) -> None:
+        tid = int(user.get("telegram_id"))
+        from app.Services.AccountService import AccountService
+
+        rows = await AccountService(self.db).list_for_user(tid)
+        if not rows:
+            await self.tg.send_message(
+                chat_id, __("settings.whitelist_no_accounts"), reply_markup=settings_keyboard()
+            )
+            return
+        ids = [str(r.get("id")) for r in rows[:24] if r.get("id")]
+        await UserState.set_state(self.db, tid, ST_SETTINGS_WHITELIST_PICK, {})
+        from config.menus import accounts_pick_keyboard
+        await self.tg.send_message(
+            chat_id, __("settings.whitelist_pick"), reply_markup=accounts_pick_keyboard(ids)
+        )
+
+    async def _finish_whitelist_pick(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        from app.Services.AccountScaffoldService import validate_account_id
+
+        aid = validate_account_id(t)
+        if not aid:
+            await self.tg.send_message(chat_id, __("accounts.invalid_id"))
+            return
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        try:
+            cfg = await prof.auto_reply_config(tid, aid)
+        except Exception as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=friendly_error(exc)), reply_markup=settings_keyboard()
+            )
+            return
+        wl = cfg.get("whitelist") or []
+        shown = ", ".join(str(x) for x in wl) if wl else "—"
+        await UserState.set_state(self.db, tid, ST_SETTINGS_WHITELIST_EDIT, {"account_id": aid})
+        await self.tg.send_message(
+            chat_id,
+            __("settings.whitelist_ask", account_id=aid, current=shown),
+            reply_markup=settings_keyboard(),
+        )
+
+    async def _finish_whitelist_edit(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str(state.context.get("account_id") or "")
+        prof = self._profile()
+        if not prof:
+            await self.tg.send_message(chat_id, __("accounts.missing_github"))
+            return
+        parts = [p for p in t.strip().split() if p]
+        if not parts:
+            await self.tg.send_message(chat_id, __("settings.whitelist_bad"))
+            return
+        cmd = parts[0].lower()
+        try:
+            if cmd == "list":
+                result = await prof.auto_reply_config(tid, aid)
+            elif cmd == "add" and len(parts) >= 2 and parts[1].lstrip("-").isdigit():
+                result = await prof.auto_reply_whitelist_add(tid, aid, int(parts[1]))
+            elif cmd in {"remove", "rm", "del"} and len(parts) >= 2 and parts[1].lstrip("-").isdigit():
+                result = await prof.auto_reply_whitelist_remove(tid, aid, int(parts[1]))
+            else:
+                await self.tg.send_message(chat_id, __("settings.whitelist_bad"))
+                return
+        except Exception as exc:
+            await self.tg.send_message(
+                chat_id, __("accounts.error", error=friendly_error(exc)), reply_markup=settings_keyboard()
+            )
+            return
+        shown = ", ".join(str(x) for x in (result.get("whitelist") or [])) or "—"
+        await UserState.clear(self.db, tid)
+        await self.tg.send_message(
+            chat_id,
+            __("settings.whitelist_done", account_id=aid, current=shown),
+            reply_markup=settings_keyboard(),
+        )
+
+    # ------------------------------------------------------------------
+    # Settings: live digest
+    # ------------------------------------------------------------------
+
+    async def _start_digest(self, chat_id: int, user: User) -> None:
+        tid = int(user.get("telegram_id"))
+        from app.Services.AccountService import AccountService
+
+        rows = await AccountService(self.db).list_for_user(tid)
+        if not rows:
+            await self.tg.send_message(
+                chat_id, __("settings.digest_no_accounts"), reply_markup=settings_keyboard()
+            )
+            return
+        ids = [str(r.get("id")) for r in rows[:24] if r.get("id")]
+        await UserState.set_state(self.db, tid, ST_SETTINGS_DIGEST, {})
+        from config.menus import accounts_pick_keyboard
+        await self.tg.send_message(
+            chat_id, __("settings.digest_pick"), reply_markup=accounts_pick_keyboard(ids)
+        )
+
+    async def _finish_digest(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        from app.Services.AccountScaffoldService import validate_account_id
+
+        aid = validate_account_id(t)
+        if not aid:
+            await self.tg.send_message(chat_id, __("accounts.invalid_id"))
+            return
+        snap = await self._status().snapshot(tid)
+        row = next(
+            (item for item in (snap.get("accounts") or []) if str(item.get("id") or "") == aid),
+            None,
+        )
+        await UserState.clear(self.db, tid)
+        if not row or row.get("heartbeat_stale") or not isinstance(row.get("stats_today"), dict):
+            await self.tg.send_message(
+                chat_id, __("settings.digest_stale", account_id=aid), reply_markup=settings_keyboard()
+            )
+            return
+        stats = row.get("stats_today") or {}
+        await self.tg.send_message(
+            chat_id,
+            __("settings.digest_live",
+               account_id=aid,
+               heartbeat=row.get("heartbeat_at") or "-",
+               forwarded=stats.get("forwarded", 0),
+               blocked=stats.get("blocked", 0),
+               queued=stats.get("queued", 0),
+               published=stats.get("published_scheduled", 0),
+               forward_queue=row.get("forward_queue_pending", 0),
+               promo_queue=row.get("promo_queue_pending", 0)),
             reply_markup=settings_keyboard(),
         )
 

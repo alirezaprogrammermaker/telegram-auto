@@ -11,6 +11,7 @@ from app.Services.GitHubService import GitHubError, GitHubService
 MERGE_POOL_WORKFLOW = "merge-group-pool.yml"
 POOL_ADMIN_WORKFLOW = "pool-admin.yml"
 ACCOUNT_CACHE_ADMIN_WORKFLOW = "account-cache-admin.yml"
+SYNC_PROMO_GROUPS_WORKFLOW = "sync-promo-groups.yml"
 
 
 class RunOrchestratorService:
@@ -126,6 +127,22 @@ class RunOrchestratorService:
         return {
             "action": "merge_pool",
             "workflow": MERGE_POOL_WORKFLOW,
+            **self._run_view(run),
+        }
+
+    async def sync_promo_groups(self, *, dry_run: bool = False) -> dict[str, Any]:
+        started = time.time()
+        await self.github.dispatch_workflow(
+            SYNC_PROMO_GROUPS_WORKFLOW,
+            {"dry_run": "true" if dry_run else "false"},
+        )
+        run = await self.github.wait_for_workflow_run(
+            SYNC_PROMO_GROUPS_WORKFLOW, not_before_epoch=started
+        )
+        return {
+            "action": "sync_promo_groups",
+            "workflow": SYNC_PROMO_GROUPS_WORKFLOW,
+            "dry_run": dry_run,
             **self._run_view(run),
         }
 

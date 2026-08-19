@@ -105,6 +105,14 @@ class User(Model):
         )
         return (await self.find(db, tid)) or self
 
+    async def demote_to_user(self, db) -> "User":
+        now = utc_now_iso()
+        tid = int(self.get("telegram_id"))
+        await self.query(db).where("telegram_id", tid).update(
+            {"role": "user", "updated_at": now}
+        )
+        return (await self.find(db, tid)) or self
+
     @classmethod
     async def admins(cls, db, *, limit: int = 50) -> list["User"]:
         return (

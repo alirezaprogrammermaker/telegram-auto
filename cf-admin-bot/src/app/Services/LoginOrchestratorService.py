@@ -14,6 +14,7 @@ from app.Services.AccountScaffoldService import (
 )
 from app.Services.AccountService import AccountConflictError, AccountService
 from app.Services.GitHubService import GitHubError, GitHubService
+from app.Services.RunOrchestratorService import RunOrchestratorService
 
 LOGIN_WORKFLOW = "login-account.yml"
 
@@ -274,18 +275,13 @@ class LoginOrchestratorService:
                 if owner_id:
                     existing = await self.accounts.get_owned(owner_id, aid)
                     role = str((existing or {}).get("role") or "").lower()
-                    enabled = (
-                        1
-                        if role == "linkdir"
-                        else int(existing.get("enabled") or 0) if existing else 0
-                    )
                     await self.accounts.sync_from_login(
                         user_id=owner_id,
                         account_id=aid,
                         label=(existing.get("label") if existing else aid),
                         role=(existing.get("role") if existing else None),
                         phone_e164=(existing.get("phone_e164") if existing else None),
-                        enabled=enabled,
+                        enabled=int(existing.get("enabled") or 0) if existing else 0,
                         session_name=(
                             existing.get("session_name") if existing else aid
                         ),
@@ -298,22 +294,22 @@ class LoginOrchestratorService:
                         ),
                         mark_login=True,
                     )
-                    if role == "linkdir":
-                        try:
-                            await self.scaffold.set_registry_enabled(
-                                aid, enabled=True
-                            )
-                        except Exception:
-                            pass
-                        wf = str(
-                            (existing or {}).get("workflow")
-                            or f"run-linkdir-{aid}.yml"
+                    try:
+                        from app.Services.ProvisioningService import ProvisioningService
+
+                        provisioning = ProvisioningService(
+                            self.db,
+                            accounts=self.accounts,
+                            scaffold=self.scaffold,
+                            runner=RunOrchestratorService(self.db, self.github),
                         )
-                        try:
-                            await self.github.dispatch_workflow(wf, {})
-                            result["linkdir_kickoff"] = wf
-                        except Exception:
-                            pass
+                        provisioned = await provisioning.provision_after_login(
+                            user_id=owner_id,
+                            account_id=aid,
+                        )
+                        result["provisioning"] = provisioned
+                    except Exception as exc:
+                        result["provisioning_error"] = str(exc)[:200]
                 result["login"] = "done"
             else:
                 await session.touch(

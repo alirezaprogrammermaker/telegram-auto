@@ -222,6 +222,7 @@ def ops_menu_keyboard() -> dict:
                 {"text": __("ops.btn_restart")},
                 {"text": __("ops.btn_merge")},
             ],
+            [{"text": __("ops.btn_sync_promo")}],
             [
                 {"text": __("accounts.btn_cancel")},
                 {"text": __("accounts.btn_back")},
@@ -258,6 +259,11 @@ def settings_keyboard() -> dict:
                 {"text": __("settings.btn_demote")},
                 {"text": __("settings.btn_stats")},
             ],
+            [
+                {"text": __("settings.btn_reply_text")},
+                {"text": __("settings.btn_whitelist")},
+            ],
+            [{"text": __("settings.btn_digest")}],
             [{"text": __("settings.btn_modules")}],
             [{"text": __("accounts.btn_back")}],
         ],
@@ -509,6 +515,10 @@ def forward_filter_keyboard() -> dict:
                 {"text": __("forward.btn_filter_prefix")},
                 {"text": __("forward.btn_filter_suffix")},
                 {"text": __("forward.btn_filter_block")},
+            ],
+            [
+                {"text": __("forward.btn_filter_allow")},
+                {"text": __("forward.btn_filter_regex")},
             ],
             [{"text": __("forward.btn_filter_clear")}],
             [{"text": __("nav.btn_back")}],

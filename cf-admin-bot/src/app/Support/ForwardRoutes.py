@@ -105,6 +105,14 @@ class TextFilterConfig:
             f"suffix={self.suffix or '(خالی)'}",
             f"block={'ON' if self.block_enabled else 'OFF'} "
             f"({len(self.block_words)} کلمه)",
+            f"allow={'ON' if self.allow_enabled else 'OFF'} "
+            f"({len(self.allow_words)} کلمه)",
+            "regex="
+            + (
+                f"ON ({self.regex_pattern})"
+                if self.regex_enabled and self.regex_pattern
+                else "OFF"
+            ),
         ]
 
 
@@ -475,6 +483,58 @@ def apply_filter_command(filt: TextFilterConfig, parts: list[str]) -> TextFilter
             filt.block_words = []
             filt.block_enabled = False
         return filt
+
+    if key in {"allow", "allowlist"}:
+        if len(parts) == 1:
+            return filt
+        sub = parts[1].strip().lower()
+        if sub in {"on", "off"}:
+            filt.allow_enabled = sub == "on"
+            if filt.allow_enabled:
+                filt.enabled = True
+            return filt
+        if sub in {"add", "remove", "rm", "del"} and len(parts) >= 3:
+            word = " ".join(parts[2:]).strip()
+            words = list(filt.allow_words)
+            if sub == "add":
+                if word and word not in words:
+                    words.append(word)
+                filt.allow_enabled = True
+                filt.allow_words = words
+                filt.enabled = True
+            else:
+                filt.allow_words = [
+                    w for w in words if w.casefold() != word.casefold()
+                ]
+            return filt
+        if sub == "clear":
+            filt.allow_words = []
+            filt.allow_enabled = False
+            return filt
+        raise ValueError("allow: on|off|add word|remove word|clear")
+
+    if key == "regex":
+        if len(parts) == 1:
+            return filt
+        sub = parts[1].strip().lower()
+        if sub in {"on", "off"}:
+            filt.regex_enabled = sub == "on"
+            if filt.regex_enabled:
+                filt.enabled = True
+            return filt
+        if sub == "set":
+            pattern = " ".join(parts[2:]).strip()
+            if not pattern:
+                raise ValueError("regex set needs pattern")
+            filt.regex_pattern = pattern
+            filt.regex_enabled = True
+            filt.enabled = True
+            return filt
+        if sub == "clear":
+            filt.regex_pattern = ""
+            filt.regex_enabled = False
+            return filt
+        raise ValueError("regex: on|off|set pattern|clear")
 
     bool_keys = {
         "links": "remove_links",

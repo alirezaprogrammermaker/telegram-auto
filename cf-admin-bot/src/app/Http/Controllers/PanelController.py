@@ -163,6 +163,27 @@ class PanelController:
             raise GitHubError("need source and group")
         return parts[0], parts[1]
 
+    async def _show_live_queue_if_fresh(
+        self, chat_id: int, user: User, account_id: str, queue_name: str
+    ) -> bool:
+        tid = int(user.get("telegram_id"))
+        snap = await self._status().promo_snapshot(tid)
+        for row in snap.get("accounts") or []:
+            if str(row.get("id") or "") != account_id:
+                continue
+            if row.get("heartbeat_stale"):
+                return False
+            pending = row.get("promo_queue_pending")
+            if pending is None:
+                return False
+            await self.tg.send_message(
+                chat_id,
+                __("cache.queue_status", account_id=account_id, queue=queue_name, pending=pending, url=""),
+                reply_markup=promo_menu_keyboard(),
+            )
+            return True
+        return False
+
     @staticmethod
     def _is_bad_ref(text: str) -> bool:
         t = (text or "").strip()
@@ -786,9 +807,10 @@ class PanelController:
             return
         if intent == "promo_queue_status":
             await UserState.clear(self.db, tid)
-            await self._dispatch_cache(
-                chat_id, user, aid, "promo_queue_status", panel="promo"
-            )
+            if not await self._show_live_queue_if_fresh(chat_id, user, aid, "promo"):
+                await self._dispatch_cache(
+                    chat_id, user, aid, "promo_queue_status", panel="promo"
+                )
             return
         if intent == "promo_queue_clear_ask":
             # Store account_id and ask for confirmation before clearing

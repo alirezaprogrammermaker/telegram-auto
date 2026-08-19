@@ -36,6 +36,12 @@ from app.Support.PromoRoutes import (
 )
 
 ALLOWED: dict[str, dict[str, str]] = {
+    "auto_reply": {
+        "reply_text": "text",
+        "whitelist": "id_list",
+        "cooldown_seconds": "int",
+        "enabled": "bool",
+    },
     "group_inspect": {
         "dry_run": "bool",
         "paused": "bool",
@@ -135,6 +141,25 @@ class ProfileConfigService:
                 if not isinstance(value, list):
                     raise GitHubError("routes must be a list")
                 out[key] = value
+            elif kind == "text":
+                out[key] = str(value or "").strip()
+            elif kind == "int":
+                out[key] = max(0, int(value))
+            elif kind == "id_list":
+                if value is None:
+                    out[key] = []
+                elif not isinstance(value, list):
+                    raise GitHubError("whitelist must be a list")
+                else:
+                    ids: list[int] = []
+                    for item in value:
+                        text = str(item).strip()
+                        if not text or not text.lstrip("-").isdigit():
+                            raise GitHubError("whitelist ids must be numeric")
+                        parsed = int(text)
+                        if parsed not in ids:
+                            ids.append(parsed)
+                    out[key] = ids
             elif kind == "safety":
                 if not isinstance(value, dict):
                     raise GitHubError("safety must be an object")
@@ -202,6 +227,15 @@ class ProfileConfigService:
                 "dry_run": cfg.get("dry_run"),
                 "daily_join_budget": cfg.get("daily_join_budget"),
             }
+        if module == "auto_reply":
+            wl = cfg.get("whitelist") if isinstance(cfg.get("whitelist"), list) else []
+            return {
+                "module": module,
+                "enabled": cfg.get("enabled"),
+                "reply_text": cfg.get("reply_text") or "",
+                "cooldown_seconds": cfg.get("cooldown_seconds") or 0,
+                "whitelist": [int(x) for x in wl if str(x).strip().lstrip("-").isdigit()],
+            }
         if module == "linkdir_collect":
             return {
                 "module": module,
@@ -250,6 +284,56 @@ class ProfileConfigService:
         return await self.patch(
             user_id, account_id, "link_harvest", {"catch_up_limit": n}
         )
+
+    async def auto_reply_config(
+        self, user_id: int, account_id: str
+    ) -> dict[str, Any]:
+        await self.accounts.require_owned(user_id, account_id)
+        cfg = await self.module_config(user_id, account_id, "auto_reply")
+        wl = cfg.get("whitelist") if isinstance(cfg.get("whitelist"), list) else []
+        whitelist = [int(x) for x in wl if str(x).strip().lstrip("-").isdigit()]
+        return {
+            "enabled": bool(cfg.get("enabled", True)),
+            "reply_text": str(cfg.get("reply_text") or ""),
+            "cooldown_seconds": int(cfg.get("cooldown_seconds") or 0),
+            "whitelist": whitelist,
+        }
+
+    async def auto_reply_set_text(
+        self, user_id: int, account_id: str, text: str
+    ) -> dict[str, Any]:
+        text = str(text or "").strip()
+        if not text:
+            raise GitHubError("reply text cannot be empty")
+        result = await self.patch(
+            user_id, account_id, "auto_reply", {"reply_text": text}
+        )
+        result["reply_text"] = text
+        return result
+
+    async def auto_reply_whitelist_add(
+        self, user_id: int, account_id: str, telegram_id: int
+    ) -> dict[str, Any]:
+        cfg = await self.auto_reply_config(user_id, account_id)
+        wl = list(cfg.get("whitelist") or [])
+        if telegram_id not in wl:
+            wl.append(int(telegram_id))
+        result = await self.patch(
+            user_id, account_id, "auto_reply", {"whitelist": wl}
+        )
+        result["whitelist"] = wl
+        return result
+
+    async def auto_reply_whitelist_remove(
+        self, user_id: int, account_id: str, telegram_id: int
+    ) -> dict[str, Any]:
+        cfg = await self.auto_reply_config(user_id, account_id)
+        wl = [int(x) for x in (cfg.get("whitelist") or []) if int(x) != int(telegram_id)]
+        result = await self.patch(
+            user_id, account_id, "auto_reply", {"whitelist": wl}
+        )
+        result["whitelist"] = wl
+        return result
 
     async def add_directory(
         self, user_id: int, account_id: str, ref: str
@@ -360,6 +444,95 @@ class ProfileConfigService:
         routes = upsert_route(routes, route)
         result = await self._save_promo_routes(user_id, account_id, routes)
         result["route"] = route
+        return result
+
+    async def promo_group_remove(
+        self, user_id: int, account_id: str, source: str, group: str
+    ) -> dict[str, Any]:
+        cfg = await self.module_config(user_id, account_id, "promo_spread")
+        routes = migrate_routes(cfg)
+        route = find_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        groups = normalize_group_list(list(route.get("groups") or []))
+        ref = display_ref(group)
+        new_groups = [g for g in groups if display_ref(g) != ref]
+        if len(new_groups) == len(groups):
+            raise GitHubError("group_missing")
+        route["groups"] = new_groups
+        routes = upsert_route(routes, route)
+        result = await self._save_promo_routes(user_id, account_id, routes)
+        result["route"] = route
+        return result
+
+    async def promo_set_route_mode(
+        self, user_id: int, account_id: str, source: str, mode: str
+    ) -> dict[str, Any]:
+        mode = str(mode or "").strip().lower()
+        if mode not in {"forward", "copy"}:
+            raise GitHubError("mode must be forward|copy")
+        cfg = await self.module_config(user_id, account_id, "promo_spread")
+        routes = migrate_routes(cfg)
+        route = find_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        route["mode"] = mode
+        routes = upsert_route(routes, route)
+        result = await self._save_promo_routes(user_id, account_id, routes)
+        result["route"] = route
+        return result
+
+    async def promo_route_groups(
+        self, user_id: int, account_id: str, source: str | None = None
+    ) -> dict[str, Any]:
+        cfg = await self.module_config(user_id, account_id, "promo_spread")
+        routes = migrate_routes(cfg)
+        if source:
+            route = find_route(routes, source)
+            if not route:
+                raise GitHubError("route_missing")
+            groups = normalize_group_list(route.get("groups"))
+            return {
+                "source": display_ref(source),
+                "groups": groups,
+                "lines": [f"• {g}" for g in groups] or ["—"],
+            }
+        lines: list[str] = []
+        for route in routes:
+            src = display_ref(route.get("source"))
+            groups = normalize_group_list(route.get("groups"))
+            preview = ", ".join(groups[:6]) or "—"
+            suffix = " …" if len(groups) > 6 else ""
+            lines.append(f"• {src}: {preview}{suffix}")
+        return {"lines": lines or ["—"], "route_count": len(routes)}
+
+    async def promo_safety_config(
+        self, user_id: int, account_id: str
+    ) -> dict[str, Any]:
+        from app.Support.PromoSafety import SafetyConfig
+
+        cfg = await self.module_config(user_id, account_id, "promo_spread")
+        safety = SafetyConfig.from_dict(cfg.get("safety"))
+        return {"summary": safety.summary_lines(), "safety": safety.to_dict()}
+
+    async def promo_safety_command(
+        self, user_id: int, account_id: str, cmd: str
+    ) -> dict[str, Any]:
+        from app.Support.PromoSafety import SafetyConfig, apply_safety_command
+
+        cfg = await self.module_config(user_id, account_id, "promo_spread")
+        safety = SafetyConfig.from_dict(cfg.get("safety"))
+        parts = [p for p in (cmd or "").strip().split() if p]
+        if not parts:
+            return {"summary": safety.summary_lines()}
+        updated = apply_safety_command(safety, parts)
+        result = await self.patch(
+            user_id,
+            account_id,
+            "promo_spread",
+            {"safety": updated.to_dict()},
+        )
+        result["summary"] = updated.summary_lines()
         return result
 
     async def to_promo(

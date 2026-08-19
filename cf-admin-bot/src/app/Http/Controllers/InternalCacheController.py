@@ -70,6 +70,21 @@ class InternalCacheController:
                 url=url,
             )
         dump = data.get("data")
+        if action == "promo_safety_dump" and isinstance(dump, dict):
+            paused_until = dump.get("paused_until") or "—"
+            reason = dump.get("pause_reason") or "—"
+            strikes = int(dump.get("flood_strikes") or 0)
+            sends = dump.get("sends") if isinstance(dump.get("sends"), list) else []
+            status = "OPEN" if dump.get("paused_until") else "closed"
+            return (
+                f"🛡 <b>promo safety runtime</b> — <code>{account_id}</code>\n"
+                f"circuit: <code>{status}</code>\n"
+                f"paused_until: <code>{paused_until}</code>\n"
+                f"reason: <code>{reason}</code>\n"
+                f"flood_strikes: <code>{strikes}</code>\n"
+                f"sends_kept: <code>{len(sends)}</code>\n"
+                f"{url}"
+            )
         preview = ""
         if isinstance(dump, dict):
             preview = json.dumps(dump, ensure_ascii=False)[:800]

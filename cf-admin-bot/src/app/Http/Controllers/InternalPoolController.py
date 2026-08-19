@@ -1,10 +1,14 @@
 """GHA → Worker: pool-admin result (+ optional to_promo auto-patch)."""
 from __future__ import annotations
 
+import json
+
+from app.Models.Assignment import Assignment
+from app.Services.RunOrchestratorService import RunOrchestratorService
 from app.Services.ProfileConfigService import ProfileConfigService
 from app.Services.TelegramService import TelegramService
 from app.Support.BridgeAuth import require_bridge_token
-from app.Support.GithubFactory import make_scaffold
+from app.Support.GithubFactory import make_github, make_scaffold
 from app.Support.Lang import __
 from config.bot import BotConfig
 from workers import Response
@@ -68,9 +72,29 @@ class InternalPoolController:
         if not scaffold:
             return __("accounts.missing_github")
         try:
-            await ProfileConfigService(self.config.db, scaffold).to_promo(
+            profile = ProfileConfigService(self.config.db, scaffold)
+            await profile.to_promo(
                 user_id, promo_id, source, ref
             )
+            try:
+                await Assignment.create(
+                    self.config.db,
+                    user_id=user_id,
+                    account_id=promo_id,
+                    task_type="promo",
+                    source=source,
+                    target=json.dumps([ref], ensure_ascii=False),
+                )
+            except Exception:
+                pass
+            gh = make_github(self.config)
+            if gh:
+                try:
+                    await RunOrchestratorService(
+                        self.config.db, gh
+                    ).dispatch(user_id, promo_id)
+                except Exception:
+                    pass
         except Exception as exc:
             return __("accounts.error", error=str(exc)[:200])
         return __(

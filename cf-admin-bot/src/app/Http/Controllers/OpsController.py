@@ -8,8 +8,10 @@ from app.Services.AccountService import AccountConflictError, AccountService
 from app.Services.GitHubService import GitHubError
 from app.Services.RunOrchestratorService import RunOrchestratorService
 from app.Services.TelegramService import TelegramService
+from app.Support.ErrorFormat import friendly_error
 from app.Support.GithubFactory import make_github
 from app.Support.Lang import __
+from app.Support.StatusFormat import translate_run_status
 from config.bot import BotConfig
 from config.menus import (
     accounts_pick_keyboard,
@@ -22,7 +24,7 @@ ST_OPS_MENU = "ops_menu"
 ST_OPS_PICK = "ops_pick"
 ST_OPS_CONFIRM = "ops_confirm"
 
-ACTIONS = frozenset({"dispatch", "cancel", "restart", "merge"})
+ACTIONS = frozenset({"dispatch", "cancel", "restart", "merge", "sync_promo"})
 
 
 class OpsController:
@@ -128,6 +130,16 @@ class OpsController:
                 reply_markup=confirm_ops_keyboard("merge"),
             )
             return
+        elif t == __("ops.btn_sync_promo"):
+            await UserState.set_state(
+                self.db, tid, ST_OPS_CONFIRM, {"action": "sync_promo"}
+            )
+            await self.tg.send_message(
+                chat_id,
+                __("ops.confirm_sync_promo"),
+                reply_markup=confirm_ops_keyboard("sync_promo"),
+            )
+            return
 
         if not action:
             await self.tg.send_message(
@@ -204,6 +216,8 @@ class OpsController:
         try:
             if action == "merge":
                 info = await runner.merge_pool()
+            elif action == "sync_promo":
+                info = await runner.sync_promo_groups(dry_run=False)
             elif action == "dispatch":
                 info = await runner.dispatch(tid, aid)
             elif action == "cancel":
@@ -229,7 +243,7 @@ class OpsController:
             await UserState.set_state(self.db, tid, ST_OPS_MENU, {})
             await self.tg.send_message(
                 chat_id,
-                __("accounts.error", error=str(exc)[:240]),
+                __("accounts.error", error=friendly_error(exc)),
                 reply_markup=ops_menu_keyboard(),
             )
             return
@@ -238,13 +252,14 @@ class OpsController:
         if action == "cancel" and not info.get("cancelled"):
             body = __("ops.cancel_none", account_id=aid)
         else:
+            status_fa = translate_run_status(info.get("status"), info.get("conclusion"))
             body = __(
                 "ops.done",
                 action=__("ops.action_" + action),
                 account_id=aid or "pool",
                 run_id=info.get("run_id") or "-",
-                status=info.get("status") or "-",
-                conclusion=info.get("conclusion") or "-",
+                status=status_fa,
+                conclusion="",
                 url=info.get("html_url") or "",
             )
         await self.tg.send_message(chat_id, body, reply_markup=ops_menu_keyboard())

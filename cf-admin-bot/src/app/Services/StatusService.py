@@ -1,6 +1,7 @@
 """Read-only control-plane snapshots (D1 + latest GHA runs + heartbeat metrics)."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from app.Models.Command import AccountHeartbeat
@@ -18,6 +19,20 @@ class StatusService:
         self.db = db
         self.github = github
         self.accounts = AccountService(db)
+
+    @staticmethod
+    def _heartbeat_is_stale(updated_at: Any, *, max_age_minutes: int = 5) -> bool:
+        text = str(updated_at or "").strip()
+        if not text:
+            return True
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except Exception:
+            return True
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        age_minutes = (datetime.now(timezone.utc) - dt).total_seconds() / 60.0
+        return age_minutes > float(max_age_minutes)
 
     async def _latest_run(self, workflow: str | None) -> dict[str, Any] | None:
         if not self.github or not workflow or workflow == "-":
@@ -49,20 +64,27 @@ class StatusService:
                 "stats_today": None,
                 "forward_queue_pending": None,
                 "promo_queue_pending": None,
+                "promo_circuit": None,
             }
         meta = hb.get("meta") if isinstance(hb.get("meta"), dict) else {}
         metrics = meta.get("metrics") if isinstance(meta.get("metrics"), dict) else {}
         stats = metrics.get("stats_today")
         if not isinstance(stats, dict):
             stats = None
+        updated_at = hb.get("updated_at")
         return {
             "heartbeat_status": hb.get("status"),
-            "heartbeat_at": hb.get("updated_at"),
-            "heartbeat_stale": False,
+            "heartbeat_at": updated_at,
+            "heartbeat_stale": StatusService._heartbeat_is_stale(updated_at),
             "modules": hb.get("modules") if isinstance(hb.get("modules"), dict) else {},
             "stats_today": stats,
             "forward_queue_pending": metrics.get("forward_queue_pending"),
             "promo_queue_pending": metrics.get("promo_queue_pending"),
+            "promo_circuit": (
+                metrics.get("promo_circuit")
+                if isinstance(metrics.get("promo_circuit"), dict)
+                else None
+            ),
         }
 
     async def snapshot(

@@ -232,6 +232,13 @@ def _format_status(status: dict) -> str:
                    status=item.get("status"),
                    reason=item.get("reason"))
             )
+    drift = status.get("drift") or {}
+    if drift:
+        lines.append("")
+        lines.append(
+            f"drift: assignment_only={drift.get('assignment_only', 0)} | "
+            f"profile_only={drift.get('profile_only', 0)}"
+        )
     return "\n".join(lines)
 
 

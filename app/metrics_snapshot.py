@@ -51,10 +51,23 @@ def _stats_today() -> dict[str, Any]:
     }
 
 
+def _promo_circuit() -> dict[str, Any]:
+    data = load_json(data_path("promo_safety.json"), {})
+    if not isinstance(data, dict):
+        data = {}
+    return {
+        "is_open": bool(data.get("paused_until")),
+        "paused_until": data.get("paused_until"),
+        "pause_reason": data.get("pause_reason") or "",
+        "flood_strikes": int(data.get("flood_strikes") or 0),
+    }
+
+
 def collect_runtime_metrics() -> dict[str, Any]:
     """Snapshot for heartbeat meta_json.metrics."""
     return {
         "stats_today": _stats_today(),
         "forward_queue_pending": _forward_queue_pending(),
         "promo_queue_pending": _promo_queue_pending(),
+        "promo_circuit": _promo_circuit(),
     }

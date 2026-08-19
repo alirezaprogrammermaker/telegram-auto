@@ -1,10 +1,11 @@
-"""Forward panel — channel_forward profile + queue ops."""
+"""Forward panel — channel_forward profile + queue ops + quick-setup wizard."""
 from __future__ import annotations
 
 from app.Models.User import User
 from app.Models.UserState import UserState
 from app.Services.AccountScaffoldService import validate_account_id
 from app.Services.AccountService import AccountConflictError, AccountService
+from app.Services.ForwardJobService import ForwardJobService
 from app.Services.GitHubService import GitHubError
 from app.Services.ProfileConfigService import ProfileConfigService
 from app.Services.RunOrchestratorService import RunOrchestratorService
@@ -13,15 +14,25 @@ from app.Services.TelegramService import TelegramService
 from app.Support.GithubFactory import make_github, make_scaffold
 from app.Support.Lang import __
 from config.bot import BotConfig
+from app.Support.ErrorFormat import friendly_error
+from app.Support.StatusFormat import format_live_metrics, format_run_line
 from config.menus import (
     accounts_pick_keyboard,
+    forward_advanced_keyboard,
+    forward_filter_keyboard,
     forward_menu_keyboard,
+    forward_routes_keyboard,
+    forward_schedule_keyboard,
+    forward_setup_keyboard,
     main_keyboard,
+    queue_clear_confirm_keyboard,
 )
 
 FORWARD_PICK_ROLES = ("forward", "full")
 CANCEL_TEXTS = frozenset({"/cancel", "انصراف"})
 
+ST_FWD_SETUP = "forward_setup"
+ST_FWD_QUEUE_CLEAR_CONFIRM = "forward_queue_clear_confirm"
 ST_FWD_PICK = "forward_pick"
 ST_FWD_ROUTE_ADD = "forward_route_add"
 ST_FWD_ROUTE_SET = "forward_route_set"
@@ -43,6 +54,9 @@ class ForwardController:
         self.tg = tg
         self.config = config
         self.db = config.db
+
+    def _jobs(self) -> ForwardJobService:
+        return ForwardJobService(self.db)
 
     def _status(self) -> StatusService:
         return StatusService(self.db, make_github(self.config))
@@ -124,10 +138,14 @@ class ForwardController:
             return __(empty_key)
         lines = []
         for row in accounts:
-            on = "ON" if row.get("enabled") else "OFF"
-            run_bit = f"{row.get('run_status')}/{row.get('run_conclusion')}"
-            if row.get("run_id"):
-                run_bit = f"#{row.get('run_id')} {run_bit}"
+            on = "✅ فعال" if row.get("enabled") else "⏸ غیرفعال"
+            run_bit = format_run_line(
+                row.get("run_id"),
+                row.get("run_status"),
+                row.get("run_conclusion"),
+                row.get("run_url"),
+            )
+            live_bit = format_live_metrics(row)
             url = row.get("run_url") or ""
             lines.append(
                 __(
@@ -136,11 +154,33 @@ class ForwardController:
                     on=on,
                     role=row.get("role"),
                     status=row.get("status"),
+                    live=live_bit,
                     run=run_bit,
                     url=url,
                 )
             )
         return "\n".join(lines)
+
+    async def _show_live_queue_if_fresh(
+        self, chat_id: int, user: User, account_id: str, queue_name: str
+    ) -> bool:
+        tid = int(user.get("telegram_id"))
+        snap = await self._status().forward_snapshot(tid)
+        for row in snap.get("accounts") or []:
+            if str(row.get("id") or "") != account_id:
+                continue
+            if row.get("heartbeat_stale"):
+                return False
+            pending = row.get("forward_queue_pending")
+            if pending is None:
+                return False
+            await self.tg.send_message(
+                chat_id,
+                __("cache.queue_status", account_id=account_id, queue=queue_name, pending=pending, url=""),
+                reply_markup=forward_menu_keyboard(),
+            )
+            return True
+        return False
 
     async def handle(self, chat_id: int, user: User, text: str) -> bool:
         tid = int(user.get("telegram_id"))
@@ -156,6 +196,12 @@ class ForwardController:
             )
             return True
 
+        if current == ST_FWD_SETUP:
+            await self._handle_setup(chat_id, user, t)
+            return True
+        if current == ST_FWD_QUEUE_CLEAR_CONFIRM:
+            await self._finish_fwd_queue_clear_confirm(chat_id, user, t)
+            return True
         if current == ST_FWD_PICK:
             await self._finish_pick(chat_id, user, t)
             return True
@@ -208,12 +254,38 @@ class ForwardController:
             await self.show_forward(chat_id, user)
             return True
 
-        if t == __("forward.btn_help"):
+        if t == __("forward.btn_setup"):
+            await self._start_setup(chat_id, user)
+            return True
+        if t == __("forward.btn_jobs"):
+            await self._show_jobs(chat_id, user)
+            return True
+
+        # Sub-menu entry buttons
+        if t == __("forward.btn_sub_routes"):
             await self.tg.send_message(
-                chat_id,
-                __("forward.help_full"),
-                reply_markup=forward_menu_keyboard(),
+                chat_id, __("forward.routes_header"), reply_markup=forward_routes_keyboard()
             )
+            return True
+        if t == __("forward.btn_sub_filter"):
+            await self.tg.send_message(
+                chat_id, __("forward.filter_header"), reply_markup=forward_filter_keyboard()
+            )
+            return True
+        if t == __("forward.btn_sub_schedule"):
+            await self.tg.send_message(
+                chat_id, __("forward.schedule_header"), reply_markup=forward_schedule_keyboard()
+            )
+            return True
+        if t == __("forward.btn_sub_advanced"):
+            await self.tg.send_message(
+                chat_id, __("forward.advanced_header"), reply_markup=forward_advanced_keyboard()
+            )
+            return True
+
+        # Back from sub-menus
+        if t == __("nav.btn_back"):
+            await self.show_forward(chat_id, user)
             return True
 
         btn_map = {
@@ -242,6 +314,8 @@ class ForwardController:
             __("forward.btn_filter_prefix"): "filter_prefix",
             __("forward.btn_filter_suffix"): "filter_suffix",
             __("forward.btn_filter_block"): "filter_block",
+            __("forward.btn_filter_allow"): "filter_allow",
+            __("forward.btn_filter_regex"): "filter_regex",
             __("forward.btn_filter_clear"): "filter_clear",
             __("forward.btn_schedule_view"): "schedule_view",
             __("forward.btn_schedule_on"): "schedule_on",
@@ -255,7 +329,7 @@ class ForwardController:
             __("forward.btn_delivery"): "delivery",
             __("forward.btn_import"): "import",
             __("forward.btn_queue_status"): "forward_queue_status",
-            __("forward.btn_queue_clear"): "forward_queue_clear",
+            __("forward.btn_queue_clear"): "forward_queue_clear_ask",
         }
         if t in btn_map:
             await self._start_pick(chat_id, user, intent=btn_map[t])
@@ -308,9 +382,24 @@ class ForwardController:
             await self._show_profile(chat_id, user, aid)
             return
 
-        if intent in {"forward_queue_status", "forward_queue_clear"}:
+        if intent == "forward_queue_status":
             await UserState.clear(self.db, tid)
-            await self._dispatch_cache(chat_id, user, aid, intent)
+            if not await self._show_live_queue_if_fresh(chat_id, user, aid, "forward"):
+                await self._dispatch_cache(chat_id, user, aid, "forward_queue_status")
+            return
+        if intent == "forward_queue_clear_ask":
+            await UserState.set_state(
+                self.db, tid, ST_FWD_QUEUE_CLEAR_CONFIRM, {"account_id": aid}
+            )
+            await self.tg.send_message(
+                chat_id,
+                __("cache.queue_clear_confirm", account_id=aid),
+                reply_markup=queue_clear_confirm_keyboard(),
+            )
+            return
+        if intent == "forward_queue_clear":
+            await UserState.clear(self.db, tid)
+            await self._dispatch_cache(chat_id, user, aid, "forward_queue_clear")
             return
 
         if intent == "route_add":
@@ -384,6 +473,8 @@ class ForwardController:
             "filter_prefix": (ST_FWD_FILTER_CMD, "forward.ask_filter_prefix"),
             "filter_suffix": (ST_FWD_FILTER_CMD, "forward.ask_filter_suffix"),
             "filter_block": (ST_FWD_FILTER_CMD, "forward.ask_filter_block"),
+            "filter_allow": (ST_FWD_FILTER_CMD, "forward.ask_filter_allow"),
+            "filter_regex": (ST_FWD_FILTER_CMD, "forward.ask_filter_regex"),
             "schedule_tz": (ST_FWD_SCHEDULE_CMD, "forward.ask_schedule_tz"),
             "schedule_days": (ST_FWD_SCHEDULE_CMD, "forward.ask_schedule_days"),
             "schedule_hours": (ST_FWD_SCHEDULE_CMD, "forward.ask_schedule_hours"),
@@ -515,7 +606,7 @@ class ForwardController:
                 return
         except (AccountConflictError, GitHubError, ValueError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
 
@@ -535,7 +626,7 @@ class ForwardController:
             result = await prof.forward_add_route(tid, aid, source, dest)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -554,7 +645,7 @@ class ForwardController:
             result = await prof.forward_set_destination(tid, aid, source, dest)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -573,7 +664,7 @@ class ForwardController:
             result = await prof.forward_set_route_mode(tid, aid, source, mode)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -592,7 +683,7 @@ class ForwardController:
             result = await prof.forward_set_visibility(tid, aid, source, vis)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -611,7 +702,7 @@ class ForwardController:
             result = await prof.forward_dest_add(tid, aid, source, dest)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -630,7 +721,7 @@ class ForwardController:
             result = await prof.forward_dest_remove(tid, aid, source, dest)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -646,7 +737,7 @@ class ForwardController:
             await self.tg.send_message(chat_id, __("accounts.missing_github"))
             return
         try:
-            if intent in {"filter_prefix", "filter_suffix", "filter_block"}:
+            if intent in {"filter_prefix", "filter_suffix", "filter_block", "filter_allow", "filter_regex"}:
                 parts = t.strip().split(None, 1)
                 if len(parts) < 2:
                     raise GitHubError("need source and command")
@@ -655,13 +746,15 @@ class ForwardController:
                     "filter_prefix": f"prefix {cmd_tail}",
                     "filter_suffix": f"suffix {cmd_tail}",
                     "filter_block": f"block {cmd_tail}",
+                    "filter_allow": f"allow {cmd_tail}",
+                    "filter_regex": f"regex {cmd_tail}",
                 }[intent]
             else:
                 raise GitHubError("bad filter intent")
             result = await prof.forward_filter_command(tid, aid, source, cmd)
         except (AccountConflictError, GitHubError, ValueError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -689,7 +782,7 @@ class ForwardController:
             result = await prof.forward_schedule_command(tid, aid, source, cmd)
         except (AccountConflictError, GitHubError, ValueError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -708,7 +801,7 @@ class ForwardController:
             result = await prof.forward_media_command(tid, aid, source, t.strip())
         except (AccountConflictError, GitHubError, ValueError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -727,7 +820,7 @@ class ForwardController:
             result = await prof.forward_dedup_command(tid, aid, source, t.strip())
         except (AccountConflictError, GitHubError, ValueError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -746,7 +839,7 @@ class ForwardController:
             result = await prof.forward_delivery_command(tid, aid, source, t.strip())
         except (AccountConflictError, GitHubError, ValueError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -765,7 +858,7 @@ class ForwardController:
             result = await prof.forward_import_routes(tid, aid, sources_csv, dest)
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await UserState.clear(self.db, tid)
@@ -793,7 +886,7 @@ class ForwardController:
             desc = await prof.describe_module(tid, account_id, "channel_forward")
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
         await self.tg.send_message(
@@ -847,7 +940,7 @@ class ForwardController:
                 return
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240])
+                chat_id, __("accounts.error", error=friendly_error(exc))
             )
             return
 
@@ -912,7 +1005,7 @@ class ForwardController:
         except (AccountConflictError, GitHubError) as exc:
             await self.tg.send_message(
                 chat_id,
-                __("accounts.error", error=str(exc)[:240]),
+                __("accounts.error", error=friendly_error(exc)),
                 reply_markup=forward_menu_keyboard(),
             )
             return
@@ -926,4 +1019,227 @@ class ForwardController:
                 url=info.get("html_url") or "",
             ),
             reply_markup=forward_menu_keyboard(),
+        )
+
+    async def _finish_fwd_queue_clear_confirm(
+        self, chat_id: int, user: User, t: str
+    ) -> None:
+        tid = int(user.get("telegram_id"))
+        state = await UserState.get_or_idle(self.db, tid)
+        aid = str((state.context or {}).get("account_id") or "")
+        await UserState.clear(self.db, tid)
+        if t != __("cache.queue_clear_btn_confirm"):
+            await self.tg.send_message(
+                chat_id, __("panel.cancelled"), reply_markup=forward_menu_keyboard()
+            )
+            return
+        await self._dispatch_cache(chat_id, user, aid, "forward_queue_clear")
+
+    # ──────────────────────────────────────────────────────────────────
+    # Quick-setup wizard
+    # ──────────────────────────────────────────────────────────────────
+
+    async def _start_setup(self, chat_id: int, user: User) -> None:
+        tid = int(user.get("telegram_id"))
+        ids = await self._ids_for_roles(tid)
+        await UserState.set_state(self.db, tid, ST_FWD_SETUP, {"step": "account"})
+        if ids:
+            await self.tg.send_message(
+                chat_id,
+                __("forward.setup_step1"),
+                reply_markup=accounts_pick_keyboard(ids),
+            )
+        else:
+            await self.tg.send_message(
+                chat_id,
+                __("forward.setup_step1"),
+                reply_markup=forward_menu_keyboard(),
+            )
+
+    async def _handle_setup(self, chat_id: int, user: User, t: str) -> None:
+        tid = int(user.get("telegram_id"))
+        cancel_set = CANCEL_TEXTS | {__("accounts.btn_cancel"), __("accounts.btn_back")}
+        if t in cancel_set:
+            await UserState.clear(self.db, tid)
+            await self.tg.send_message(
+                chat_id, __("panel.cancelled"), reply_markup=forward_menu_keyboard()
+            )
+            return
+
+        state = await UserState.get_or_idle(self.db, tid)
+        ctx: dict = dict(state.context or {})
+        step = ctx.get("step", "account")
+
+        if step == "account":
+            aid = validate_account_id(t)
+            if not aid:
+                await self.tg.send_message(chat_id, __("accounts.invalid_id"))
+                return
+            ctx["account_id"] = aid
+            ctx["step"] = "source"
+            await UserState.set_state(self.db, tid, ST_FWD_SETUP, ctx)
+            await self.tg.send_message(
+                chat_id,
+                __("forward.setup_step2", account_id=aid),
+                reply_markup=forward_setup_keyboard(),
+            )
+            return
+
+        if step == "source":
+            src = t.strip()
+            if not src:
+                return
+            ctx["source"] = src
+            ctx["step"] = "dest"
+            await UserState.set_state(self.db, tid, ST_FWD_SETUP, ctx)
+            await self.tg.send_message(
+                chat_id,
+                __("forward.setup_step3", source=src),
+                reply_markup=forward_setup_keyboard(),
+            )
+            return
+
+        if step == "dest":
+            dst = t.strip()
+            if not dst:
+                return
+            ctx["destination"] = dst
+            ctx["step"] = "filter"
+            await UserState.set_state(self.db, tid, ST_FWD_SETUP, ctx)
+            await self.tg.send_message(
+                chat_id,
+                __("forward.setup_step4_filter", destination=dst),
+                reply_markup=forward_setup_keyboard(),
+            )
+            return
+
+        if step == "filter":
+            yes_btn = __("forward.setup_btn_yes_filter")
+            filter_links = t == yes_btn
+            await self._finish_setup(chat_id, user, ctx, filter_links)
+            return
+
+        # Unknown step — restart
+        await UserState.clear(self.db, tid)
+        await self._start_setup(chat_id, user)
+
+    async def _finish_setup(
+        self,
+        chat_id: int,
+        user: User,
+        ctx: dict,
+        filter_links: bool,
+    ) -> None:
+        tid = int(user.get("telegram_id"))
+        aid = str(ctx.get("account_id") or "")
+        source = str(ctx.get("source") or "")
+        destination = str(ctx.get("destination") or "")
+
+        await UserState.clear(self.db, tid)
+        await self.tg.send_message(chat_id, __("forward.setup_saving"))
+
+        # 1. Persist job in D1
+        job_svc = self._jobs()
+        job_id = await job_svc.create_job(
+            account_id=aid,
+            owner_id=tid,
+            source=source,
+            destination=destination,
+            auto_join=True,
+            filter_remove_links=filter_links,
+        )
+
+        # 2. Sync all enabled jobs for this account → GitHub profile
+        jobs = await job_svc.list_for_account(aid)
+        enabled_jobs = [j for j in jobs if j.get("enabled")]
+        patch = ForwardJobService.build_module_patch(enabled_jobs, auto_join=True)
+
+        profile_svc = self._profile()
+        if not profile_svc:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.missing_github"),
+                reply_markup=forward_menu_keyboard(),
+            )
+            return
+        try:
+            await profile_svc.scaffold.patch_profile_modules(aid, "channel_forward", patch)
+        except Exception as exc:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.error", error=friendly_error(exc)),
+                reply_markup=forward_menu_keyboard(),
+            )
+            return
+
+        # 3. Trigger workflow immediately
+        runner = self._runner()
+        run_info: dict = {}
+        dispatch_ok = False
+        if runner:
+            try:
+                run_info = await runner.dispatch(tid, aid)
+                dispatch_ok = True
+                await job_svc.mark_dispatched(
+                    job_id,
+                    run_id=run_info.get("run_id"),
+                    run_status=run_info.get("status") or "queued",
+                )
+            except Exception as exc:
+                err = friendly_error(exc)
+                await self.tg.send_message(
+                    chat_id,
+                    __("forward.setup_dispatch_fail", error=err, job_id=job_id),
+                    reply_markup=forward_menu_keyboard(),
+                )
+                return
+
+        if not runner:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.missing_github"),
+                reply_markup=forward_menu_keyboard(),
+            )
+            return
+
+        await self.tg.send_message(
+            chat_id,
+            __(
+                "forward.setup_done",
+                account_id=aid,
+                source=source,
+                destination=destination,
+                filter_links="✅ روشن" if filter_links else "❌ خاموش",
+                job_id=job_id,
+            ),
+            reply_markup=forward_menu_keyboard(),
+        )
+
+    # ──────────────────────────────────────────────────────────────────
+    # Jobs dashboard
+    # ──────────────────────────────────────────────────────────────────
+
+    async def _show_jobs(self, chat_id: int, user: User) -> None:
+        tid = int(user.get("telegram_id"))
+        jobs = await self._jobs().list_for_owner(tid)
+        lines = [__("forward.jobs_header")]
+        if not jobs:
+            lines.append(__("forward.jobs_empty"))
+        else:
+            for j in jobs[:20]:
+                last_run = str(j.get("last_run_status") or j.get("last_dispatched_at") or "—")
+                status_emoji = "✅" if j.get("enabled") else "⏸"
+                lines.append(
+                    __(
+                        "forward.jobs_line",
+                        job_id=j.get("id"),
+                        account_id=j.get("account_id"),
+                        source=j.get("source"),
+                        destination=j.get("destination"),
+                        status=f"{status_emoji} {j.get('last_run_status') or '—'}",
+                        last_run=last_run,
+                    )
+                )
+        await self.tg.send_message(
+            chat_id, "\n".join(lines), reply_markup=forward_menu_keyboard()
         )

@@ -10,6 +10,11 @@ from app.Models.Automation import AutomationPolicy, AutomationRun
 from app.Models.Command import AccountHeartbeat, Command
 from app.Models.Model import row_to_dict
 from app.Models.User import User
+from app.Services.AccountScaffoldService import AccountScaffoldService
+from app.Services.AssignmentRebalanceService import AssignmentRebalanceService
+from app.Services.AssignmentService import AssignmentService
+from app.Services.DriftService import DriftService
+from app.Services.ProfileConfigService import ProfileConfigService
 from app.Services.RunOrchestratorService import RunOrchestratorService
 from app.Services.TelegramService import TelegramService
 from app.Support.Lang import __
@@ -107,10 +112,12 @@ class AutomationService:
                 }
             )
         recent = await AutomationRun.list_recent_for_user(self.db, user_id=user_id, limit=10)
+        drift = await self._drift_for_user(user_id)
         return {
             "policy": policy,
             "accounts": rows,
             "recent_runs": [r.to_view() for r in recent],
+            "drift": drift,
         }
 
     async def run_watchdog(
@@ -277,6 +284,11 @@ class AutomationService:
             except Exception as exc:
                 info = {"error": str(exc)[:300]}
                 run_status = "failed"
+                rebalance = await self._rebalance_after_failure(
+                    user_id=user_id, account_id=account_id
+                )
+                if rebalance:
+                    info["rebalance"] = rebalance
         else:
             run_status = "skipped"
         await self._record_run(
@@ -453,3 +465,27 @@ class AutomationService:
         minutes = max(1, int(minutes))
         epoch_minutes = math.floor(datetime.now(timezone.utc).timestamp() / 60)
         return str(epoch_minutes // minutes)
+
+    async def _drift_for_user(self, user_id: int) -> dict[str, Any]:
+        if self.runner is None:
+            return {"accounts": [], "assignment_only": 0, "profile_only": 0}
+        scaffold = AccountScaffoldService(self.runner.github)
+        profile = ProfileConfigService(self.db, scaffold)
+        return await DriftService(self.db, profile).scan_user(user_id)
+
+    async def _rebalance_after_failure(
+        self, *, user_id: int, account_id: str
+    ) -> dict[str, Any] | None:
+        if self.runner is None:
+            return None
+        scaffold = AccountScaffoldService(self.runner.github)
+        assignments = AssignmentService(self.db, scaffold, self.runner)
+        try:
+            result = await AssignmentRebalanceService(assignments).rebalance_failed_account(
+                user_id=user_id, failed_account_id=account_id
+            )
+        except Exception:
+            return None
+        if not result.get("count"):
+            return None
+        return result
