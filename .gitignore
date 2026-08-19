@@ -16,3 +16,14 @@ experiments/linkdir_finders/results/
 .mypy_cache/
 .idea/
 .vscode/
+
+# Local-only: admin control plane, docs, and operational notes
+cf-admin-bot/
+docs/
+CAPABILITIES.md
+tests/
+.playwright-mcp/
+.wrangler/
+another.txt
+moved.txt
+source.txt
