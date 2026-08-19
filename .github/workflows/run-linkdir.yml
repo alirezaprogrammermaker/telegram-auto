@@ -132,6 +132,7 @@ jobs:
           DATA_DIR: data/${{ inputs.account_id }}
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
+          TELEGRAM_SESSION_STRING: ${{ env.TELEGRAM_SESSION_STRING }}
           ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
           ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
           PYTHONIOENCODING: utf-8

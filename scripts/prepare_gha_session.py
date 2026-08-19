@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import json
 import os
 import shutil
@@ -71,6 +72,33 @@ def _write_github_env(key: str, value: str) -> None:
         fh.write(f"{key}<<EOF\n{value}\nEOF\n")
 
 
+def _parse_portable_payload(raw: str) -> dict | None:
+    """Return a portable StringSession payload, or None for legacy sqlite secrets."""
+    raw = raw.strip()
+    if not raw:
+        return None
+
+    candidates: list[object] = []
+    try:
+        candidates.append(json.loads(raw))
+    except json.JSONDecodeError:
+        pass
+
+    try:
+        candidates.append(json.loads(base64.b64decode(raw, validate=True)))
+    except (json.JSONDecodeError, binascii.Error, ValueError):
+        pass
+
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        if candidate.get("format") != "telethon_string_session":
+            continue
+        if str(candidate.get("session") or "").strip():
+            return candidate
+    return None
+
+
 def main() -> int:
     account = (os.environ.get("ACCOUNT_ID") or "default").strip()
     session_name = (os.environ.get("SESSION_NAME") or "easy_seen").strip() or "easy_seen"
@@ -95,22 +123,24 @@ def main() -> int:
 
     session = ROOT / f"{session_name}.session"
     restored_format = "legacy_sqlite_b64"
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        payload = None
-
-    if isinstance(payload, dict) and payload.get("format") == "telethon_string_session":
+    payload = _parse_portable_payload(raw)
+    if payload is not None:
         session_string = str(payload.get("session") or "").strip()
-        if not session_string:
-            print(f"::warning::Empty StringSession payload for account={account}")
-            _write_skip(True)
-            return 0
         _write_github_env("TELEGRAM_SESSION_STRING", session_string)
         session.touch()
         restored_format = "telethon_string_session"
     else:
-        session.write_bytes(base64.b64decode(raw))
+        try:
+            blob = base64.b64decode(raw, validate=True)
+        except (binascii.Error, ValueError):
+            print(f"::warning::Unrecognized session secret for account={account}")
+            _write_skip(True)
+            return 0
+        if not blob:
+            print(f"::warning::Empty legacy session secret for account={account}")
+            _write_skip(True)
+            return 0
+        session.write_bytes(blob)
 
     print(
         f"account={account} session={session.name} bytes={session.stat().st_size} "

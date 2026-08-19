@@ -28,6 +28,7 @@ on:
         options:
           - send
           - complete
+          - export-secret
       account_id:
         description: "Account id from config/accounts.json (e.g. promo1, promo2)"
         required: true
@@ -148,6 +149,8 @@ jobs:
               raise SystemExit("No phone from bridge or LOGIN_PHONE secret")
           if action == "complete" and not otp:
               raise SystemExit("No OTP from bridge or LOGIN_OTP secret")
+          if action == "export-secret":
+              print("export-secret: no credentials required")
           print(f"Credentials resolved for action={action} (values not printed)")
           PY
 
@@ -202,6 +205,39 @@ jobs:
             ${{ steps.acc.outputs.session_name }}.session-journal
           key: login-scratch-${{ inputs.account_id }}-${{ github.run_id }}
 
+      - name: Export session secret (re-wrap / refresh)
+        if: inputs.action == 'export-secret'
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          SESSION_NAME: ${{ steps.acc.outputs.session_name }}
+          DATA_DIR: data/${{ inputs.account_id }}
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          GH_TOKEN: ${{ secrets.REPO_SECRETS_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.REPO_SECRETS_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${GH_TOKEN}" ]; then
+            echo "::error::REPO_SECRETS_TOKEN missing (PAT that can write repo secrets)"
+            exit 1
+          fi
+          if [ ! -f "${SESSION_NAME}.session" ]; then
+            echo "::error::${SESSION_NAME}.session missing — complete login first on this account"
+            exit 1
+          fi
+          python3 scripts/gha_login.py export-secret --secret-name "${{ steps.acc.outputs.session_secret }}"
+          echo "Session secret refreshed."
+
+      - name: Save login scratch after export
+        if: inputs.action == 'export-secret' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            pending_login.json
+            ${{ steps.acc.outputs.session_name }}.session
+            ${{ steps.acc.outputs.session_name }}.session-journal
+          key: login-scratch-${{ inputs.account_id }}-${{ github.run_id }}
+
       - name: Complete login + write session secret
         if: inputs.action == 'complete'
         env:
@@ -230,3 +266,13 @@ jobs:
           fi
           python3 scripts/gha_login.py complete --secret-name "${{ steps.acc.outputs.session_secret }}"
           echo "Login complete."
+
+      - name: Save login scratch after complete
+        if: inputs.action == 'complete' && success()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            pending_login.json
+            ${{ steps.acc.outputs.session_name }}.session
+            ${{ steps.acc.outputs.session_name }}.session-journal
+          key: login-scratch-${{ inputs.account_id }}-${{ github.run_id }}

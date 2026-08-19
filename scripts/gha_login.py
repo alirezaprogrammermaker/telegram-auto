@@ -171,7 +171,10 @@ def cmd_export_secret(secret_name: str) -> dict:
     portable = asyncio.run(_portable_session_payload())
     if portable.get("status") != "ok":
         return portable
-    encoded = json.dumps(portable, ensure_ascii=True)
+    # Base64-wrap JSON so GHA env injection never truncates `{...}` payloads to `{}`.
+    encoded = base64.b64encode(
+        json.dumps(portable, ensure_ascii=True).encode("ascii")
+    ).decode("ascii")
     # Pipe body on stdin so it never appears in process argv / logs.
     env = os.environ.copy()
     proc = subprocess.run(
@@ -193,7 +196,7 @@ def cmd_export_secret(secret_name: str) -> dict:
         "secret_name": secret_name,
         "session": config.session_name,
         "bytes": session_file.stat().st_size,
-        "format": "telethon_string_session",
+        "format": "telethon_string_session_b64",
     }
 
 
