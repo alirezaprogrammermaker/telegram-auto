@@ -1,32 +1,30 @@
 {
   "id": "any",
-  "label": "any (full)",
+  "label": "لینکدونی‌یاب ۱ — any",
   "session_name": "any",
   "modules": {
     "auto_reply": {
-      "enabled": true
+      "enabled": false
     },
     "channel_forward": {
-      "enabled": true,
-      "auto_join": false,
-      "routes": []
+      "enabled": false
     },
     "digest": {
-      "enabled": true
+      "enabled": false
     },
     "promo_spread": {
-      "enabled": true,
-      "dry_run": true,
-      "paused": false,
-      "mode": "forward",
-      "auto_join": false,
-      "routes": []
+      "enabled": false
     },
     "link_harvest": {
       "enabled": false
     },
     "group_inspect": {
       "enabled": false
+    },
+    "linkdir_collect": {
+      "enabled": true,
+      "paused": false,
+      "steps": "search,snowball,rerank"
     }
   }
 }

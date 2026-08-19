@@ -1,0 +1,35 @@
+# Auto-scaffolded by scripts/scaffold_account.py
+# Linkdir discovery batches — not a long-running bot.
+
+name: run-linkdir-any
+
+on:
+  schedule:
+    - cron: "28 6 * * *"
+    - cron: "35 11 * * *"
+    - cron: "42 16 * * *"
+    - cron: "49 21 * * *"
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: "Comma steps: search,snowball,rerank"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  any:
+    uses: ./.github/workflows/run-linkdir.yml
+    with:
+      account_id: any
+      session_name: any
+      steps: ${{ inputs.steps || '' }}
+    secrets:
+      API_ID: ${{ secrets.API_ID }}
+      API_HASH: ${{ secrets.API_HASH }}
+      TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64_ANY }}
+      ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+      ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}

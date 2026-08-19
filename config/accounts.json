@@ -29,9 +29,9 @@
     },
     {
       "id": "any",
-      "label": "any (full)",
-      "enabled": false,
-      "workflow": "run-account-any.yml",
+      "label": "لینکدونی‌یاب ۱ — any",
+      "enabled": true,
+      "workflow": "run-linkdir-any.yml",
       "session_name": "any",
       "session_secret": "TELEGRAM_SESSION_B64_ANY",
       "profile": "config/accounts/any.json"
