@@ -137,8 +137,6 @@ def main() -> int:
         _write_skip(True)
         return 0
 
-    print(f"session_secret_len={len(raw)}")
-
     session = ROOT / f"{session_name}.session"
     restored_format = "legacy_sqlite_b64"
     payload = _parse_portable_payload(raw)
