@@ -10,7 +10,11 @@
       "enabled": true,
       "dry_run": true,
       "paused": false,
-      "mode": "forward"
-    }
+      "mode": "forward",
+      "auto_join": true,
+      "routes": []
+    },
+    "link_harvest": { "enabled": false },
+    "group_inspect": { "enabled": false }
   }
 }

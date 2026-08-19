@@ -1,0 +1,50 @@
+name: sync-promo-groups
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade --quiet pip
+          python -m pip install --quiet -r requirements.txt
+
+      - name: Sync promo routes from linkdir
+        env:
+          ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          PROMO_EXPORT_LIMIT: "500"
+          PROMO_RANK_MIN: ${{ vars.PROMO_RANK_MIN || '0.5' }}
+          PROMO_SOURCE_FALLBACK: ${{ vars.PROMO_SOURCE_FALLBACK || '' }}
+        run: |
+          python -m app.promo_group_sync
+
+      - name: Auto-commit changed promo configs
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: sync promo routes from linkdir"
+          file_pattern: "config/accounts/promo*.json"
+

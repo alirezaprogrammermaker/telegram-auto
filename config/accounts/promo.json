@@ -17,7 +17,7 @@
       "dry_run": true,
       "paused": false,
       "mode": "forward",
-      "auto_join": false,
+      "auto_join": true,
       "routes": []
     },
     "link_harvest": {

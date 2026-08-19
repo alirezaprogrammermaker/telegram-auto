@@ -6,6 +6,25 @@ from typing import Any
 from app.Services.AccountScaffoldService import AccountScaffoldService, validate_account_id
 from app.Services.AccountService import AccountConflictError, AccountService
 from app.Services.GitHubService import GitHubError
+from app.Support.ForwardRoutes import (
+    DedupConfig,
+    DeliveryConfig,
+    MediaFilterConfig,
+    ScheduleConfig,
+    TextFilterConfig,
+    apply_dedup_command,
+    apply_delivery_command,
+    apply_filter_command,
+    apply_media_command,
+    apply_schedule_command,
+    default_route_dict,
+    find_route as find_forward_route,
+    format_routes_lines,
+    migrate_routes as migrate_forward_routes,
+    remove_route as remove_forward_route,
+    route_destinations,
+    upsert_route as upsert_forward_route,
+)
 from app.Support.PromoRoutes import (
     default_route,
     display_ref,
@@ -46,6 +65,8 @@ ALLOWED: dict[str, dict[str, str]] = {
         "dry_run": "bool",
         "paused": "bool",
         "auto_join": "bool",
+        "enabled": "bool",
+        "routes": "routes",
     },
 }
 
@@ -189,14 +210,16 @@ class ProfileConfigService:
                 "steps": cfg.get("steps") or "search,snowball,rerank",
             }
         if module == "channel_forward":
+            routes = migrate_forward_routes(cfg)
             return {
                 "module": module,
                 "enabled": cfg.get("enabled"),
                 "paused": cfg.get("paused"),
                 "dry_run": cfg.get("dry_run"),
-                "route_count": len(cfg.get("routes") or [])
-                if isinstance(cfg.get("routes"), list)
-                else 0,
+                "auto_join": cfg.get("auto_join"),
+                "routes": routes,
+                "route_count": len(routes),
+                "routes_text": format_routes_lines(routes),
             }
         return {"module": module, "config": cfg}
 
@@ -349,4 +372,340 @@ class ProfileConfigService:
         """Add an already-approved group ref onto a promo route (profile only)."""
         return await self.promo_group_add(
             user_id, promo_account_id, source, group_ref
+        )
+
+    async def _forward_routes(
+        self, user_id: int, account_id: str
+    ) -> list[dict[str, Any]]:
+        cfg = await self.module_config(user_id, account_id, "channel_forward")
+        return migrate_forward_routes(cfg)
+
+    async def _save_forward_routes(
+        self, user_id: int, account_id: str, routes: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        return await self.patch(
+            user_id,
+            account_id,
+            "channel_forward",
+            {"routes": routes, "enabled": True},
+        )
+
+    async def forward_add_route(
+        self,
+        user_id: int,
+        account_id: str,
+        source: str,
+        dest: str,
+    ) -> dict[str, Any]:
+        routes = await self._forward_routes(user_id, account_id)
+        source_ref = display_ref(source)
+        dest_ref = display_ref(dest)
+        if not source_ref or not dest_ref:
+            raise GitHubError("need source and destination")
+        if find_forward_route(routes, source_ref):
+            raise GitHubError("route_exists")
+        route = default_route_dict(
+            source_ref, dest_ref, owner_id=int(user_id), visibility="private"
+        )
+        routes.append(route)
+        result = await self._save_forward_routes(user_id, account_id, routes)
+        result["route"] = route
+        return result
+
+    async def forward_remove_route(
+        self, user_id: int, account_id: str, source: str
+    ) -> dict[str, Any]:
+        routes = remove_forward_route(
+            await self._forward_routes(user_id, account_id), source
+        )
+        return await self._save_forward_routes(user_id, account_id, routes)
+
+    async def forward_set_destination(
+        self, user_id: int, account_id: str, source: str, dest: str
+    ) -> dict[str, Any]:
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        dest_ref = display_ref(dest)
+        route["destination"] = dest_ref
+        route["destinations"] = [dest_ref]
+        routes = upsert_forward_route(routes, route)
+        result = await self._save_forward_routes(user_id, account_id, routes)
+        result["route"] = route
+        return result
+
+    async def forward_set_route_paused(
+        self, user_id: int, account_id: str, source: str, *, paused: bool
+    ) -> dict[str, Any]:
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        route["paused"] = bool(paused)
+        return await self._save_forward_routes(
+            user_id, account_id, upsert_forward_route(routes, route)
+        )
+
+    async def forward_set_route_mode(
+        self, user_id: int, account_id: str, source: str, mode: str
+    ) -> dict[str, Any]:
+        mode = str(mode or "").strip().lower()
+        if mode not in {"forward", "copy"}:
+            raise GitHubError("mode must be forward|copy")
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        route["forward_mode"] = mode
+        return await self._save_forward_routes(
+            user_id, account_id, upsert_forward_route(routes, route)
+        )
+
+    async def forward_set_visibility(
+        self, user_id: int, account_id: str, source: str, visibility: str
+    ) -> dict[str, Any]:
+        from app.Support.ForwardRoutes import normalize_visibility
+
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        route["visibility"] = normalize_visibility(visibility)
+        if route.get("owner_id") is None:
+            route["owner_id"] = int(user_id)
+        return await self._save_forward_routes(
+            user_id, account_id, upsert_forward_route(routes, route)
+        )
+
+    async def forward_claim_route(
+        self, user_id: int, account_id: str, source: str
+    ) -> dict[str, Any]:
+        from app.Support.ForwardRoutes import normalize_visibility
+
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        owner = route.get("owner_id")
+        if owner not in (None, "") and int(owner) != int(user_id):
+            raise GitHubError("route_owned_by_other")
+        route["owner_id"] = int(user_id)
+        route["visibility"] = normalize_visibility(route.get("visibility"))
+        return await self._save_forward_routes(
+            user_id, account_id, upsert_forward_route(routes, route)
+        )
+
+    async def forward_dest_add(
+        self, user_id: int, account_id: str, source: str, dest: str
+    ) -> dict[str, Any]:
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        dests = route_destinations(route)
+        dest_ref = display_ref(dest)
+        if dest_ref not in [display_ref(d) for d in dests]:
+            dests.append(dest_ref)
+        route["destinations"] = dests
+        route["destination"] = dests[0]
+        return await self._save_forward_routes(
+            user_id, account_id, upsert_forward_route(routes, route)
+        )
+
+    async def forward_dest_remove(
+        self, user_id: int, account_id: str, source: str, dest: str
+    ) -> dict[str, Any]:
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        target = display_ref(dest)
+        dests = [
+            d
+            for d in route_destinations(route)
+            if display_ref(d) != target
+        ]
+        if not dests:
+            raise GitHubError("need_at_least_one_dest")
+        route["destinations"] = dests
+        route["destination"] = dests[0]
+        return await self._save_forward_routes(
+            user_id, account_id, upsert_forward_route(routes, route)
+        )
+
+    async def forward_import_routes(
+        self,
+        user_id: int,
+        account_id: str,
+        sources_csv: str,
+        dest: str,
+    ) -> dict[str, Any]:
+        routes = await self._forward_routes(user_id, account_id)
+        dest_ref = display_ref(dest)
+        sources = [
+            s.strip()
+            for s in sources_csv.replace("،", ",").split(",")
+            if s.strip()
+        ]
+        if not sources or not dest_ref:
+            raise GitHubError("need sources and dest")
+        added = 0
+        for src in sources:
+            if find_forward_route(routes, src):
+                continue
+            routes.append(
+                default_route_dict(
+                    src, dest_ref, owner_id=int(user_id), visibility="private"
+                )
+            )
+            added += 1
+        result = await self._save_forward_routes(user_id, account_id, routes)
+        result["added"] = added
+        return result
+
+    async def forward_filter_command(
+        self, user_id: int, account_id: str, source: str, cmd: str
+    ) -> dict[str, Any]:
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        parts = [p for p in (cmd or "").strip().split() if p]
+        filt = TextFilterConfig.from_dict(route.get("filter"))
+        if not parts:
+            result = await self.module_config(user_id, account_id, "channel_forward")
+            return {
+                "summary": filt.summary_lines(),
+                "module": "channel_forward",
+                "merged": result,
+            }
+        filt = apply_filter_command(filt, parts)
+        route["filter"] = filt.to_dict()
+        if filt.enabled and route.get("forward_mode") == "forward":
+            route["forward_mode"] = "copy"
+        saved = await self._save_forward_routes(
+            user_id, account_id, upsert_forward_route(routes, route)
+        )
+        saved["summary"] = filt.summary_lines()
+        return saved
+
+    async def forward_schedule_command(
+        self, user_id: int, account_id: str, source: str, cmd: str
+    ) -> dict[str, Any]:
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        parts = [p for p in (cmd or "").strip().split() if p]
+        sched = ScheduleConfig.from_dict(route.get("schedule"))
+        if not parts:
+            return {"summary": sched.summary_lines(), "module": "channel_forward"}
+        sched = apply_schedule_command(sched, parts)
+        route["schedule"] = sched.to_dict()
+        saved = await self._save_forward_routes(
+            user_id, account_id, upsert_forward_route(routes, route)
+        )
+        saved["summary"] = sched.summary_lines()
+        return saved
+
+    async def forward_media_command(
+        self, user_id: int, account_id: str, source: str, cmd: str
+    ) -> dict[str, Any]:
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        parts = [p for p in (cmd or "").strip().split() if p]
+        mf = MediaFilterConfig.from_dict(route.get("media_filter"))
+        if not parts:
+            return {"summary": mf.summary_lines(), "module": "channel_forward"}
+        mf = apply_media_command(mf, parts)
+        route["media_filter"] = mf.to_dict()
+        saved = await self._save_forward_routes(
+            user_id, account_id, upsert_forward_route(routes, route)
+        )
+        saved["summary"] = mf.summary_lines()
+        return saved
+
+    async def forward_dedup_command(
+        self, user_id: int, account_id: str, source: str, cmd: str
+    ) -> dict[str, Any]:
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        parts = [p for p in (cmd or "").strip().split() if p]
+        dd = DedupConfig.from_dict(route.get("dedup"))
+        if not parts:
+            return {
+                "summary": [
+                    f"enabled={'ON' if dd.enabled else 'OFF'}",
+                    f"window={dd.window_hours}h",
+                ],
+                "module": "channel_forward",
+            }
+        dd = apply_dedup_command(dd, parts)
+        route["dedup"] = dd.to_dict()
+        saved = await self._save_forward_routes(
+            user_id, account_id, upsert_forward_route(routes, route)
+        )
+        saved["summary"] = [
+            f"enabled={'ON' if dd.enabled else 'OFF'}",
+            f"window={dd.window_hours}h",
+        ]
+        return saved
+
+    async def forward_delivery_command(
+        self, user_id: int, account_id: str, source: str, cmd: str
+    ) -> dict[str, Any]:
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        parts = [p for p in (cmd or "").strip().split() if p]
+        dlv = DeliveryConfig.from_dict(route.get("delivery"))
+        if not parts:
+            return {"summary": dlv.summary_lines(), "module": "channel_forward"}
+        dlv = apply_delivery_command(dlv, parts)
+        route["delivery"] = dlv.to_dict()
+        saved = await self._save_forward_routes(
+            user_id, account_id, upsert_forward_route(routes, route)
+        )
+        saved["summary"] = dlv.summary_lines()
+        return saved
+
+    async def forward_toggle_filter_bool(
+        self,
+        user_id: int,
+        account_id: str,
+        source: str,
+        key: str,
+        *,
+        value: bool | None = None,
+    ) -> dict[str, Any]:
+        bool_keys = {
+            "links": "remove_links",
+            "mentions": "remove_mentions",
+            "hashtags": "remove_hashtags",
+            "ids": "remove_ids",
+        }
+        field_name = bool_keys.get(key)
+        if not field_name:
+            raise GitHubError("bad filter key")
+        routes = await self._forward_routes(user_id, account_id)
+        route = find_forward_route(routes, source)
+        if not route:
+            raise GitHubError("route_missing")
+        filt = TextFilterConfig.from_dict(route.get("filter"))
+        cur = bool(getattr(filt, field_name))
+        new_val = (not cur) if value is None else bool(value)
+        setattr(filt, field_name, new_val)
+        if new_val:
+            filt.enabled = True
+        route["filter"] = filt.to_dict()
+        if filt.enabled and route.get("forward_mode") == "forward":
+            route["forward_mode"] = "copy"
+        return await self._save_forward_routes(
+            user_id, account_id, upsert_forward_route(routes, route)
         )

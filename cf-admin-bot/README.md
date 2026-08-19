@@ -104,6 +104,7 @@ Labels come from `lang/fa/messages.py` (`menu.btn_*`).
 | وضعیت | owned accounts + latest workflow run |
 | کشف | pool status/list/approve/reject + inspect/harvest profile toggles |
 | تبلیغ | dry_run / pause / mode on promo profile |
+| فوروارد | مسیرها، فیلتر، schedule، media/dedup/delivery، صف |
 | تنظیمات | admin list |
 
 Bridge endpoints (Bearer `BRIDGE_TOKEN`):

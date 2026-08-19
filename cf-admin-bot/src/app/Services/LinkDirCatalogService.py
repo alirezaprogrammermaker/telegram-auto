@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -50,8 +51,70 @@ def _tri_bool(value: Any) -> int | None:
 
 
 class LinkDirCatalogService:
-    def __init__(self, db) -> None:
+    def __init__(self, db, *, r2_bucket: Any | None = None) -> None:
         self.db = db
+        # Optional: publish a daily promo export into an R2 object so promo sync
+        # doesn't hit D1 repeatedly.
+        self.r2_bucket = r2_bucket
+
+    _PROMO_EXPORT_KEY = "linkdir/promo_ready.json"
+
+    async def publish_promo_ready_to_r2(
+        self,
+        *,
+        limit: int = 500,
+        key: str | None = None,
+    ) -> dict[str, Any]:
+        """Best-effort: export promo-ready catalog and store it in R2."""
+        if self.r2_bucket is None:
+            return {"ok": False, "error": "r2_unconfigured"}
+        storage_key = str(key or self._PROMO_EXPORT_KEY)
+        payload = await self.export_promo_ready(limit=limit)
+        # Mark the payload origin (optional but helpful for debugging).
+        payload["source"] = f"r2:{storage_key}"
+        raw = dumps_json(payload) or "{}"
+
+        await self.r2_bucket.put(
+            storage_key,
+            raw,
+            httpMetadata={"contentType": "application/json; charset=utf-8"},
+        )
+        return {"ok": True, "key": storage_key, "count": payload.get("count")}
+
+    async def load_promo_ready_from_r2_or_d1(
+        self,
+        *,
+        limit: int = 200,
+        key: str | None = None,
+    ) -> dict[str, Any]:
+        """Read promo_ready.json from R2, fallback to D1 export when missing."""
+        if self.r2_bucket is None:
+            return await self.export_promo_ready(limit=limit)
+
+        storage_key = str(key or self._PROMO_EXPORT_KEY)
+        try:
+            obj = await self.r2_bucket.get(storage_key)
+        except Exception:
+            obj = None
+
+        if obj is not None:
+            raw = getattr(obj, "body", None)
+            if raw is not None:
+                try:
+                    if isinstance(raw, (bytes, bytearray)):
+                        text = raw.decode("utf-8", errors="replace")
+                    else:
+                        text = str(raw)
+                    parsed = json.loads(text)
+                    if isinstance(parsed, dict):
+                        # Ensure a consistent shape even if old payloads exist.
+                        if parsed.get("items") is None:
+                            parsed["items"] = []
+                        return parsed
+                except Exception:
+                    pass
+
+        return await self.export_promo_ready(limit=limit)
 
     async def upsert_items(
         self,
@@ -364,6 +427,7 @@ class LinkDirCatalogService:
             slim.append(
                 {
                     "ref": r.get("ref"),
+                    "parent_seed": r.get("parent_seed"),
                     "username": r.get("username"),
                     "title": r.get("title"),
                     "participants": r.get("participants"),
@@ -540,4 +604,13 @@ class LinkDirCatalogService:
                 "finished_at": data.get("finished_at") or now,
             }
         )
+        # Best-effort: keep a fresh R2 snapshot of promo-ready items.
+        # This reduces D1 reads from promo sync jobs.
+        if self.r2_bucket is not None:
+            try:
+                await self.publish_promo_ready_to_r2(limit=500)
+            except Exception:
+                # Don't fail the run record if R2 publish fails.
+                pass
+
         return {"ok": True}

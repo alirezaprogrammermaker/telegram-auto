@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app.Http.Controllers.AccountsController import AccountsController
+from app.Http.Controllers.ForwardController import ForwardController
 from app.Http.Controllers.OpsController import OpsController
 from app.Http.Controllers.PanelController import PanelController
 from app.Models.User import User
@@ -20,6 +21,7 @@ class AdminController:
         self.accounts = AccountsController(tg, config, ctx=ctx)
         self.ops = OpsController(tg, config)
         self.panel = PanelController(tg, config)
+        self.forward = ForwardController(tg, config)
 
     async def welcome(self, chat_id: int, user: User) -> None:
         await UserState.clear(self.db, int(user.get("telegram_id")))
@@ -79,6 +81,8 @@ class AdminController:
         if await self.ops.handle(chat_id, user, t):
             return
         if await self.panel.handle(chat_id, user, t):
+            return
+        if await self.forward.handle(chat_id, user, t):
             return
 
         if t in {"/start", "start", "منو", "/menu"}:

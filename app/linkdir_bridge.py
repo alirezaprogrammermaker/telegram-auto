@@ -68,7 +68,7 @@ def mark_stale(*, older_than_hours: float = 72.0) -> dict[str, Any] | None:
 def export_promo_ready(*, limit: int = 200) -> dict[str, Any] | None:
     return bridge_request(
         "GET",
-        "/internal/linkdir/export-promo",
+        "/internal/linkdir/promo-export-url",
         query={"limit": limit},
     )
 

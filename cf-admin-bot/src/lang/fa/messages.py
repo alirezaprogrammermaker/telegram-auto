@@ -27,6 +27,7 @@ MESSAGES: dict[str, str] = {
     "menu.btn_accounts": "👥 اکانت‌ها",
     "menu.btn_discovery": "🧺 کشف",
     "menu.btn_promo": "📣 تبلیغ",
+    "menu.btn_forward": "📨 فوروارد",
     "menu.btn_ops": "🛠 عملیات",
     "menu.btn_settings": "⚙️ تنظیمات",
     "menu.status": (
@@ -69,7 +70,7 @@ MESSAGES: dict[str, str] = {
         "اکانت‌ها — افزودن، لاگین، فعال‌سازی، لاگ‌اوت، حذف\n"
         "عملیات — اجرا / کنسل / ریستارت / ادغام pool روی GHA\n"
         "وضعیت — داشبورد اکانت + آخرین ران\n"
-        "کشف / تبلیغ — وضعیت نقش‌ها + راهنما (دستورات زنده روی Telethon)\n"
+        "کشف / تبلیغ / فوروارد — وضعیت نقش‌ها + کنترل پروفایل\n"
         "/cancel — لغو ویزارد\n"
         "رمز مدیر را فقط یک‌بار برای ارتقا بفرست."
     ),
@@ -434,6 +435,150 @@ MESSAGES: dict[str, str] = {
         "mode=<code>{mode}</code>\n"
         "routes={route_count}\n"
         "{routes}"
+    ),
+    "forward.header": "📨 <b>فوروارد — channel_forward</b>\n────────────",
+    "forward.empty": "هنوز اکانت forward مال تو ثبت نشده.",
+    "forward.help": (
+        "────────────\n"
+        "مسیرها، فیلتر، زمان‌بندی، media/dedup/delivery و صف از همین ربات.\n"
+        "ارسال واقعی روی رانر؛ بعد از تغییر پروفایل در صورت نیاز ریستارت کن."
+    ),
+    "forward.help_full": (
+        "📨 <b>راهنمای فوروارد</b>\n"
+        "────────────\n"
+        "<b>ماژول:</b> dry_run، pause/resume، auto_join\n"
+        "<b>مسیر:</b> add، remove، set، pause/resume، mode، visibility، claim\n"
+        "<b>مقصد:</b> dest add/remove (چند مقصد)\n"
+        "<b>فیلتر:</b> on/off، links/mentions/hashtags (toggle)، prefix/suffix/block\n"
+        "<b>زمان‌بندی:</b> on/off، tz، days، hours، clear\n"
+        "<b>سایر:</b> media، dedup، delivery، import، صف\n\n"
+        "دیگر لازم نیست به PV اکانت forward پیام بدهی."
+    ),
+    "forward.btn_refresh": "🔄 تازه‌سازی فوروارد",
+    "forward.btn_help": "📖 راهنمای فوروارد",
+    "forward.btn_profile_status": "📄 وضعیت مسیرها",
+    "forward.btn_dry": "🧪 dry_run",
+    "forward.btn_pause": "⏸ pause forward",
+    "forward.btn_resume": "▶️ resume forward",
+    "forward.btn_auto_join_on": "auto_join: on",
+    "forward.btn_auto_join_off": "auto_join: off",
+    "forward.btn_route_add": "➕ مسیر",
+    "forward.btn_route_remove": "➖ حذف مسیر",
+    "forward.btn_route_set": "🔁 set مقصد",
+    "forward.btn_route_pause": "⏸ pause مسیر",
+    "forward.btn_route_resume": "▶️ resume مسیر",
+    "forward.btn_route_mode": "mode مسیر",
+    "forward.btn_visibility": "👁 visibility",
+    "forward.btn_claim": "📌 claim مسیر",
+    "forward.btn_dest_add": "➕ dest add",
+    "forward.btn_dest_remove": "➖ dest remove",
+    "forward.btn_filter_view": "🛠 وضعیت فیلتر",
+    "forward.btn_filter_on": "فیلتر: on",
+    "forward.btn_filter_off": "فیلتر: off",
+    "forward.btn_filter_links": "toggle links",
+    "forward.btn_filter_mentions": "toggle mentions",
+    "forward.btn_filter_hashtags": "toggle hashtags",
+    "forward.btn_filter_prefix": "filter prefix",
+    "forward.btn_filter_suffix": "filter suffix",
+    "forward.btn_filter_block": "filter block",
+    "forward.btn_filter_clear": "🧹 filter clear",
+    "forward.btn_schedule_view": "🗓 وضعیت schedule",
+    "forward.btn_schedule_on": "schedule: on",
+    "forward.btn_schedule_off": "schedule: off",
+    "forward.btn_schedule_tz": "schedule tz",
+    "forward.btn_schedule_days": "schedule days",
+    "forward.btn_schedule_hours": "schedule hours",
+    "forward.btn_schedule_clear": "🧹 schedule clear",
+    "forward.btn_media": "🎬 media filter",
+    "forward.btn_dedup": "🔁 dedup",
+    "forward.btn_delivery": "📤 delivery",
+    "forward.btn_import": "📥 import مسیرها",
+    "forward.btn_queue_status": "📥 وضعیت صف",
+    "forward.btn_queue_clear": "🧹 پاک کردن صف",
+    "forward.ask_route_add": (
+        "فرمت:\n"
+        "<code>@source @dest</code>\n"
+        "یک خط بفرست."
+    ),
+    "forward.ask_route_set": (
+        "فرمت:\n"
+        "<code>@source @dest</code>"
+    ),
+    "forward.ask_route_source": "منبع مسیر را بفرست (<code>@channel</code>):",
+    "forward.ask_route_mode": (
+        "فرمت:\n"
+        "<code>@source forward|copy</code>"
+    ),
+    "forward.ask_route_visibility": (
+        "فرمت:\n"
+        "<code>@source public|private</code>"
+    ),
+    "forward.ask_dest_add": (
+        "فرمت:\n"
+        "<code>@source @dest</code>"
+    ),
+    "forward.ask_dest_remove": (
+        "فرمت:\n"
+        "<code>@source @dest</code>"
+    ),
+    "forward.ask_filter_prefix": (
+        "فرمت:\n"
+        "<code>@source prefix متن</code> یا <code>@source prefix off</code>"
+    ),
+    "forward.ask_filter_suffix": (
+        "فرمت:\n"
+        "<code>@source suffix متن</code> یا <code>@source suffix off</code>"
+    ),
+    "forward.ask_filter_block": (
+        "فرمت:\n"
+        "<code>@source block add کلمه</code>\n"
+        "<code>@source block remove کلمه</code>\n"
+        "<code>@source block on|off|clear</code>"
+    ),
+    "forward.ask_schedule_tz": (
+        "فرمت:\n"
+        "<code>@source Asia/Tehran</code>"
+    ),
+    "forward.ask_schedule_days": (
+        "فرمت:\n"
+        "<code>@source sat,sun,mon</code>"
+    ),
+    "forward.ask_schedule_hours": (
+        "فرمت:\n"
+        "<code>@source 09:00-12:00,18:00-22:00</code>"
+    ),
+    "forward.ask_media": (
+        "دستور media را بفرست:\n"
+        "<code>on|off|allow photo,video|deny sticker</code>"
+    ),
+    "forward.ask_dedup": (
+        "دستور dedup را بفرست:\n"
+        "<code>on|off [hours]</code>"
+    ),
+    "forward.ask_delivery": (
+        "دستور delivery را بفرست:\n"
+        "<code>pin on|button متن url|sync on on</code>"
+    ),
+    "forward.ask_import": (
+        "فرمت:\n"
+        "<code>@a,@b @dest</code>"
+    ),
+    "forward.profile_status": (
+        "📨 <code>{account_id}</code>\n"
+        "enabled=<code>{enabled}</code> paused=<code>{paused}</code> "
+        "dry_run=<code>{dry_run}</code> auto_join=<code>{auto_join}</code>\n"
+        "routes={route_count}\n"
+        "{routes}"
+    ),
+    "forward.summary_done": (
+        "✅ <code>{account_id}</code> / {kind}\n"
+        "{lines}"
+    ),
+    "forward.media_status": "🎬 media:\n{lines}",
+    "forward.dedup_status": "🔁 dedup:\n{lines}",
+    "forward.delivery_status": "📤 delivery:\n{lines}",
+    "forward.import_done": (
+        "✅ import روی <code>{account_id}</code>: {added} مسیر جدید"
     ),
     "discovery.profile_status": (
         "📄 <code>{account_id}</code> / <code>{module}</code>\n"

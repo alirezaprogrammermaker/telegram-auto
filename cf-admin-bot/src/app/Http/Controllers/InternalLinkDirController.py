@@ -18,7 +18,10 @@ def _json_body(data) -> dict:
 class InternalLinkDirController:
     def __init__(self, env) -> None:
         self.config = BotConfig(env)
-        self.svc = LinkDirCatalogService(self.config.db)
+        self.svc = LinkDirCatalogService(
+            self.config.db,
+            r2_bucket=getattr(env, "LINKDIR_BUCKET", None),
+        )
 
     async def handle(self, request, action: str) -> Response:
         denied = require_bridge_token(request, self.config)
@@ -39,6 +42,8 @@ class InternalLinkDirController:
                 return await self._mark_stale(request)
             if action == "export-promo" and method == "GET":
                 return await self._export_promo(request)
+            if action == "promo-export-url" and method == "GET":
+                return await self._promo_export_url(request)
             if action == "collectors/heartbeat" and method == "POST":
                 return await self._heartbeat(request)
             if action == "jobs/claim" and method == "POST":
@@ -101,6 +106,15 @@ class InternalLinkDirController:
         qs = parse_qs(urlparse(request.url).query)
         limit = int((qs.get("limit") or ["200"])[0] or 200)
         payload = await self.svc.export_promo_ready(limit=limit)
+        return Response.json({"ok": True, **payload})
+
+    async def _promo_export_url(self, request) -> Response:
+        """Read cached promo export from R2 (fallback to D1 on miss)."""
+        qs = parse_qs(urlparse(request.url).query)
+        limit = int((qs.get("limit") or ["200"])[0] or 200)
+        payload = await self.svc.load_promo_ready_from_r2_or_d1(limit=limit)
+        # For compatibility, we keep the same payload shape as export-promo.
+        # The name "promo-export-url" is legacy from earlier iterations.
         return Response.json({"ok": True, **payload})
 
     async def _heartbeat(self, request) -> Response:

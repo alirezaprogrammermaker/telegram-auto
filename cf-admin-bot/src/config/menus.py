@@ -9,7 +9,8 @@ def main_keyboard() -> dict:
         "keyboard": [
             [{"text": __("menu.btn_status")}, {"text": __("menu.btn_accounts")}],
             [{"text": __("menu.btn_discovery")}, {"text": __("menu.btn_promo")}],
-            [{"text": __("menu.btn_ops")}, {"text": __("menu.btn_settings")}],
+            [{"text": __("menu.btn_forward")}, {"text": __("menu.btn_ops")}],
+            [{"text": __("menu.btn_settings")}],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
@@ -299,6 +300,86 @@ def discovery_menu_keyboard() -> dict:
             ],
             [
                 {"text": __("discovery.btn_help")},
+                {"text": __("accounts.btn_back")},
+            ],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def forward_menu_keyboard() -> dict:
+    return {
+        "keyboard": [
+            [
+                {"text": __("forward.btn_refresh")},
+                {"text": __("forward.btn_profile_status")},
+            ],
+            [
+                {"text": __("forward.btn_dry")},
+                {"text": __("forward.btn_pause")},
+                {"text": __("forward.btn_resume")},
+            ],
+            [
+                {"text": __("forward.btn_auto_join_on")},
+                {"text": __("forward.btn_auto_join_off")},
+            ],
+            [
+                {"text": __("forward.btn_route_add")},
+                {"text": __("forward.btn_route_remove")},
+                {"text": __("forward.btn_route_set")},
+            ],
+            [
+                {"text": __("forward.btn_route_pause")},
+                {"text": __("forward.btn_route_resume")},
+                {"text": __("forward.btn_route_mode")},
+            ],
+            [
+                {"text": __("forward.btn_visibility")},
+                {"text": __("forward.btn_claim")},
+            ],
+            [
+                {"text": __("forward.btn_dest_add")},
+                {"text": __("forward.btn_dest_remove")},
+            ],
+            [
+                {"text": __("forward.btn_filter_view")},
+                {"text": __("forward.btn_filter_on")},
+                {"text": __("forward.btn_filter_off")},
+            ],
+            [
+                {"text": __("forward.btn_filter_links")},
+                {"text": __("forward.btn_filter_mentions")},
+                {"text": __("forward.btn_filter_hashtags")},
+            ],
+            [
+                {"text": __("forward.btn_filter_prefix")},
+                {"text": __("forward.btn_filter_suffix")},
+                {"text": __("forward.btn_filter_block")},
+            ],
+            [{"text": __("forward.btn_filter_clear")}],
+            [
+                {"text": __("forward.btn_schedule_view")},
+                {"text": __("forward.btn_schedule_on")},
+                {"text": __("forward.btn_schedule_off")},
+            ],
+            [
+                {"text": __("forward.btn_schedule_tz")},
+                {"text": __("forward.btn_schedule_days")},
+                {"text": __("forward.btn_schedule_hours")},
+            ],
+            [{"text": __("forward.btn_schedule_clear")}],
+            [
+                {"text": __("forward.btn_media")},
+                {"text": __("forward.btn_dedup")},
+                {"text": __("forward.btn_delivery")},
+            ],
+            [{"text": __("forward.btn_import")}],
+            [
+                {"text": __("forward.btn_queue_status")},
+                {"text": __("forward.btn_queue_clear")},
+            ],
+            [
+                {"text": __("forward.btn_help")},
                 {"text": __("accounts.btn_back")},
             ],
         ],

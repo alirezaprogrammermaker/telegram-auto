@@ -8,6 +8,7 @@ from app.Services.GitHubService import GitHubService
 
 DISCOVERY_ROLES = frozenset({"collector", "inspector", "linkdir"})
 PROMO_ROLES = frozenset({"promo"})
+FORWARD_ROLES = frozenset({"forward"})
 LINKDIR_ROLES = frozenset({"linkdir"})
 
 
@@ -66,6 +67,9 @@ class StatusService:
 
     async def promo_snapshot(self, user_id: int) -> dict[str, Any]:
         return await self.snapshot(user_id, roles=PROMO_ROLES)
+
+    async def forward_snapshot(self, user_id: int) -> dict[str, Any]:
+        return await self.snapshot(user_id, roles=FORWARD_ROLES)
 
     async def linkdir_snapshot(self, user_id: int) -> dict[str, Any]:
         return await self.snapshot(user_id, roles=LINKDIR_ROLES)
