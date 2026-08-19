@@ -1,0 +1,34 @@
+# Linkdir collector using elmira session (TELEGRAM_SESSION_B64 / easy_seen).
+
+name: run-linkdir-main
+
+on:
+  schedule:
+    - cron: "12 6 * * *"
+    - cron: "19 11 * * *"
+    - cron: "26 16 * * *"
+    - cron: "33 21 * * *"
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: "Comma steps: search,snowball,rerank"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  linkdir_main:
+    uses: ./.github/workflows/run-linkdir.yml
+    with:
+      account_id: linkdir_main
+      session_name: easy_seen
+      steps: ${{ inputs.steps || '' }}
+    secrets:
+      API_ID: ${{ secrets.API_ID }}
+      API_HASH: ${{ secrets.API_HASH }}
+      TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
+      ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+      ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}

@@ -28,6 +28,15 @@
       "profile": "config/accounts/test.json"
     },
     {
+      "id": "linkdir_main",
+      "label": "لینکدونی‌یاب اصلی",
+      "enabled": true,
+      "workflow": "run-linkdir-main.yml",
+      "session_name": "easy_seen",
+      "session_secret": "TELEGRAM_SESSION_B64",
+      "profile": "config/accounts/linkdir_main.json"
+    },
+    {
       "id": "any",
       "label": "لینکدونی‌یاب ۱ — any",
       "enabled": true,
