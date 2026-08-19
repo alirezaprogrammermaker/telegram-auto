@@ -15,6 +15,11 @@ from typing import Any
 
 from experiments.linkdir_finders.catalog import LinkDirCatalog
 from experiments.linkdir_finders.enrich import apply_rank, chat_kind, enrich_profile, sample_activity
+from experiments.linkdir_finders.job_queue import (
+    bridge_ready,
+    claim_search_jobs,
+    complete_job,
+)
 from experiments.linkdir_finders.settings import load_config
 from experiments.linkdir_finders.tg import (
     connect_client,
@@ -74,13 +79,55 @@ async def run_search(
 ) -> dict[str, Any]:
     config = cfg or load_config()
     sc = config.get("search") or {}
+    jq = config.get("job_queue") or {}
     cat_cfg = config.get("catalog") or {}
     pipe = config.get("pipeline") or {}
-    queries = list(config.get("queries") or [])
     limit = int(sc.get("limit") or 20)
     delay = float(sc.get("delay") or 1.2)
     enrich_n = int(sc.get("enrich") or 20)
     sample = int(sc.get("sample") or 35)
+    jobs_per_run = int(sc.get("jobs_per_run") or jq.get("jobs_per_run") or 5)
+
+    use_job_queue = bool(jq.get("enabled", True)) and bool(collector_id) and bridge_ready()
+    job_entries: list[tuple[int | None, str]] = []
+    queue_meta: dict[str, Any] = {"mode": "config", "claimed": 0}
+
+    if use_job_queue:
+        claimed = claim_search_jobs(collector_id or "", limit=jobs_per_run)
+        for job in claimed:
+            payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+            query = str(payload.get("query") or "").strip()
+            job_id = job.get("id")
+            if query and job_id is not None:
+                job_entries.append((int(job_id), query))
+        queue_meta = {
+            "mode": "d1_queue",
+            "claimed": len(job_entries),
+            "owner": collector_id,
+        }
+        if not job_entries:
+            logger.info("no pending search jobs for collector=%s", collector_id)
+            return {
+                "method": "telegram_contacts_search",
+                "counts": {
+                    "keep": 0,
+                    "review": 0,
+                    "junk": 0,
+                    "enriched": 0,
+                    "total": 0,
+                },
+                "catalog": {},
+                "snapshot": None,
+                "job_queue": queue_meta,
+            }
+        queries = [q for _, q in job_entries]
+    else:
+        queries = list(config.get("queries") or [])
+        job_entries = [(None, q) for q in queries]
+        if collector_id and not bridge_ready():
+            queue_meta["fallback"] = "bridge_unavailable"
+        elif not collector_id:
+            queue_meta["fallback"] = "no_collector_id"
 
     created_client = False
     if client is None:
@@ -99,16 +146,18 @@ async def run_search(
     seen_ids: set[int] = set()
 
     try:
-        for i, query in enumerate(queries, 1):
-            logger.info("[%s/%s] search %r", i, len(queries), query)
+        for i, (job_id, query) in enumerate(job_entries, 1):
+            logger.info("[%s/%s] search %r job=%s", i, len(job_entries), query, job_id)
+            job_new = 0
             try:
                 rows = await search_once(client, query, limit=limit)
             except Exception as exc:  # noqa: BLE001
                 logger.error("search error %s: %s", type(exc).__name__, exc)
+                if job_id is not None:
+                    complete_job(job_id, status="failed", error=str(exc))
                 await asyncio.sleep(delay)
                 continue
 
-            new = 0
             for row in rows:
                 cid = row.get("id")
                 if isinstance(cid, int):
@@ -116,8 +165,10 @@ async def run_search(
                         continue
                     seen_ids.add(cid)
                 all_rows.append(row)
-                new += 1
-            logger.info("  chats=%s new_unique=%s", len(rows), new)
+                job_new += 1
+            logger.info("  chats=%s new_unique=%s", len(rows), job_new)
+            if job_id is not None:
+                complete_job(job_id, status="done", result_count=job_new)
             await asyncio.sleep(delay)
 
         if enrich_n > 0 and all_rows:
@@ -242,6 +293,7 @@ async def run_search(
         "counts": counts,
         "catalog": catalog_info,
         "snapshot": str(snapshot_path) if snapshot_path else None,
+        "job_queue": queue_meta,
     }
 
 

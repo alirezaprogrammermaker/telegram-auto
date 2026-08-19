@@ -42,7 +42,14 @@
     "limit": 15,
     "delay": 2.0,
     "enrich": 12,
-    "sample": 25
+    "sample": 25,
+    "jobs_per_run": 5
+  },
+  "job_queue": {
+    "enabled": true,
+    "search_redo_days": 14,
+    "seed_niches": ["گپ", "کانال", "گروه"],
+    "seed_suffixes": ["لینک", "لینکدونی", "تبادل لینک", "عضویت"]
   },
   "snowball": {
     "hops": 2,

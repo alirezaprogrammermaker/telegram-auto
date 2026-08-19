@@ -1,0 +1,48 @@
+# One-time / periodic seed of linkdir search jobs into D1 queue.
+# Requires ADMIN_BOT_BRIDGE_URL + ADMIN_BOT_BRIDGE_TOKEN repo secrets.
+
+name: seed-linkdir-jobs
+
+on:
+  workflow_dispatch:
+    inputs:
+      expand_templates:
+        description: "Also enqueue niche×suffix template queries"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repo
+        run: |
+          set -euo pipefail
+          rm -rf ./* ./.[!.]* 2>/dev/null || true
+          git clone --depth 1 --branch master \
+            "https://github.com/${GITHUB_REPOSITORY}.git" repo
+          shopt -s dotglob
+          mv repo/* .
+          rm -rf repo
+
+      - name: Install deps
+        run: |
+          python3 -m pip install --upgrade --quiet pip
+          python3 -m pip install --quiet -r requirements.txt
+
+      - name: Seed search jobs
+        env:
+          ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          args=""
+          if [ "${{ inputs.expand_templates }}" = "true" ]; then
+            args="--expand-templates"
+          fi
+          python3 scripts/seed_linkdir_jobs.py $args

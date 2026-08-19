@@ -37,7 +37,13 @@ _DEFAULTS: dict[str, Any] = {
         "delay_hop_min": 10.0,
         "delay_hop_max": 20.0,
     },
-    "search": {"limit": 15, "delay": 2.0, "enrich": 12, "sample": 25},
+    "search": {"limit": 15, "delay": 2.0, "enrich": 12, "sample": 25, "jobs_per_run": 5},
+    "job_queue": {
+        "enabled": True,
+        "search_redo_days": 14,
+        "seed_niches": ["گپ", "کانال", "گروه"],
+        "seed_suffixes": ["لینک", "لینکدونی", "تبادل لینک", "عضویت"],
+    },
     "snowball": {
         "hops": 2,
         "seed_limit": 8,
