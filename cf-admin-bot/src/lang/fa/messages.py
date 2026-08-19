@@ -25,10 +25,11 @@ MESSAGES: dict[str, str] = {
     # menus
     "menu.btn_status": "📊 وضعیت",
     "menu.btn_accounts": "👥 اکانت‌ها",
-    "menu.btn_discovery": "🧺 کشف",
+    "menu.btn_discovery": "🔍 گروه‌یابی",
     "menu.btn_promo": "📣 تبلیغ",
-    "menu.btn_forward": "📨 فوروارد",
-    "menu.btn_ops": "🛠 عملیات",
+    "menu.btn_forward": "📨 ارسال خودکار",
+    "menu.btn_ops": "▶️ اجرا / توقف",
+    "nav.btn_back": "⬅️ بازگشت",
     "menu.btn_help": "📖 راهنما",
     "menu.btn_settings": "⚙️ تنظیمات",
     "menu.status": (
@@ -83,7 +84,7 @@ MESSAGES: dict[str, str] = {
     "settings.modules_btn_on": "✅ روشن",
     "settings.modules_btn_off": "🚫 خاموش",
     "settings.modules_btn_reload": "🔄 ریلود",
-    "settings.modules_reload_note": "ریلود پیکربندی (patch enabled=true)",
+    "settings.modules_reload_note": "پیکربندی ماژول‌ها از ران بعدی بارگذاری می‌شود.",
     "settings.modules_done": (
         "✅ <code>{account_id}</code> — ماژول‌ها: <b>{action}</b>\n{detail}"
     ),
@@ -136,28 +137,28 @@ MESSAGES: dict[str, str] = {
     "accounts.btn_vacant_roles": "📭 نقش‌های خالی",
     "accounts.btn_all_roles": "📋 همه نقش‌ها",
     "accounts.btn_logout": "🚪 لاگ‌اوت",
-    "accounts.btn_delete": "🗑 حذف",
+    "accounts.btn_delete": "⚠️ حذف دائمی",
     "accounts.btn_confirm_logout": "✅ تأیید لاگ‌اوت",
-    "accounts.btn_confirm_delete": "⚠️ تأیید حذف دائمی",
+    "accounts.btn_confirm_delete": "⚠️ تأیید — برگشت‌ناپذیر است",
     "accounts.btn_confirm_enable": "✅ تأیید فعال‌سازی",
     "accounts.btn_confirm_disable": "✅ تأیید غیرفعال",
     "accounts.btn_manage_back": "⬅️ بازگشت به لیست",
     "accounts.btn_cancel": "❌ انصراف",
     "accounts.btn_back": "⬅️ منوی اصلی",
-    "accounts.btn_confirm": "✅ تأیید و ارسال OTP",
-    "accounts.btn_check_run": "🔄 وضعیت GHA",
-    "accounts.btn_need_2fa": "🔐 دارم 2FA",
-    "accounts.role_promo": "promo",
-    "accounts.role_forward": "forward",
-    "accounts.role_collector": "collector",
-    "accounts.role_inspector": "inspector",
-    "accounts.role_linkdir": "linkdir",
-    "accounts.role_full": "full",
+    "accounts.btn_confirm": "✅ تأیید و ارسال کد",
+    "accounts.btn_check_run": "🔄 بررسی وضعیت",
+    "accounts.btn_need_2fa": "🔐 دارم رمز ابری",
+    "accounts.role_promo": "promo — ارسال تبلیغ",
+    "accounts.role_forward": "forward — فوروارد کانال",
+    "accounts.role_collector": "collector — جمع‌آوری گروه",
+    "accounts.role_inspector": "inspector — بررسی گروه",
+    "accounts.role_linkdir": "linkdir — دایرکتوری لینک",
+    "accounts.role_full": "full — همه‌کاره",
     "accounts.list_header": "📋 <b>اکانت‌های تو</b>\n────────────",
     "accounts.list_empty": "هنوز اکانتی برای تو ثبت نشده. از «افزودن» شروع کن.",
     "accounts.list_line": (
         "• <code>{id}</code> — {label}\n"
-        "  role={role} | enabled={enabled} | status={status} | {phone}"
+        "  نقش: {role} | وضعیت: {status} | {phone}"
     ),
     "accounts.manage_pick": (
         "🛠 <b>مدیریت اکانت</b>\n"
@@ -167,10 +168,10 @@ MESSAGES: dict[str, str] = {
     "accounts.manage_detail": (
         "🛠 <b>{id}</b> — {label}\n"
         "────────────\n"
-        "role=<code>{role}</code> | status=<code>{status}</code>\n"
-        "enabled=<code>{enabled}</code> | phone=<code>{phone}</code>\n\n"
+        "نقش: <code>{role}</code> | وضعیت: <code>{status}</code>\n"
+        "فعال: <code>{enabled}</code> | شماره: <code>{phone}</code>\n\n"
         "• فعال/غیرفعال · تغییر نام · نامگذاری خودکار · تغییر نقش\n"
-        "• لاگ‌اوت / حذف"
+        "• لاگ‌اوت / ⚠️ حذف دائمی"
     ),
     "accounts.ask_rename": (
         "نام نمایشی جدید برای <code>{account_id}</code> را بفرست.\n"
@@ -217,13 +218,13 @@ MESSAGES: dict[str, str] = {
     ),
     "accounts.confirm_logout": (
         "لاگ‌اوت <code>{account_id}</code>؟\n"
-        "سشن Actions حذف می‌شود و وضعیت به scaffolded برمی‌گردد.\n"
-        "می‌توانی بعداً دوباره لاگین کنی."
+        "اتصال این اکانت به سیستم قطع می‌شود.\n"
+        "می‌توانی بعداً دوباره از «لاگین موجود» وارد شوی."
     ),
     "accounts.confirm_delete": (
-        "⚠️ حذف دائمی <code>{account_id}</code>؟\n"
-        "از D1، accounts.json، پروفایل و ورک‌فلو پاک می‌شود.\n"
-        "این کار برگشت‌پذیر نیست."
+        "⚠️ <b>این عملیات برگشت‌پذیر نیست!</b>\n\n"
+        "حذف دائمی <code>{account_id}</code>؟\n"
+        "اکانت از پایگاه داده، فایل‌های GitHub و ورک‌فلو پاک می‌شود."
     ),
     "accounts.logout_done": (
         "✅ لاگ‌اوت <code>{account_id}</code> انجام شد.\n"
@@ -233,7 +234,7 @@ MESSAGES: dict[str, str] = {
         "✅ اکانت <code>{account_id}</code> حذف شد."
     ),
     "accounts.delete_partial": (
-        "✅ ردیف D1 برای <code>{account_id}</code> حذف شد.\n"
+        "✅ اطلاعات <code>{account_id}</code> از پایگاه داده حذف شد.\n"
         "هشدار GitHub: {error}"
     ),
     "accounts.phone_taken": (
@@ -248,52 +249,66 @@ MESSAGES: dict[str, str] = {
         "اکانت <code>{account_id}</code> مال تو نیست یا هنوز ثبت نشده."
     ),
     "accounts.ask_id": (
-        "شناسه اکانت را بفرست.\n"
+        "گام ۱ از ۴ — <b>شناسه اکانت</b>\n"
+        "────────────\n"
         "فرمت: حروف کوچک انگلیسی، شروع با حرف، حداکثر ۳۲ کاراکتر.\n"
         "مثال: <code>promo2</code>\n\n"
         "/cancel برای انصراف"
     ),
-    "accounts.ask_role": "نقش اکانت را انتخاب کن:",
+    "accounts.ask_role": (
+        "گام ۲ از ۴ — <b>نقش اکانت</b>\n"
+        "────────────\n"
+        "یکی از نقش‌های زیر را انتخاب کن:\n"
+        "• promo — اکانت ارسال تبلیغ\n"
+        "• forward — اکانت فوروارد کانال\n"
+        "• collector — جمع‌آوری گروه‌های جدید\n"
+        "• inspector — بررسی و فیلتر گروه‌ها\n"
+        "• linkdir — ساخت دایرکتوری لینک\n"
+        "• full — همه‌کاره (برای اکانت اصلی)\n\n"
+        "/cancel برای انصراف"
+    ),
     "accounts.ask_phone": (
-        "شماره را با کد کشور بفرست (E.164).\n"
+        "گام ۳ از ۴ — <b>شماره تلفن</b>\n"
+        "────────────\n"
+        "با کد کشور بفرست.\n"
         "مثال: <code>+98912xxxxxxx</code>\n\n"
         "/cancel برای انصراف"
     ),
     "accounts.ask_login_id": (
-        "شناسه اکانتی که از قبل scaffold شده را بفرست.\n"
+        "شناسه اکانت ثبت‌شده را بفرست.\n"
         "مثال: <code>promo1</code>\n\n"
         "/cancel برای انصراف"
     ),
     "accounts.confirm": (
-        "تأیید نهایی:\n"
-        "• id: <code>{account_id}</code>\n"
-        "• role: <code>{role}</code>\n"
-        "• phone: <code>{phone}</code>\n\n"
-        "با تأیید: scaffold روی GitHub + ارسال OTP روی رانر."
+        "گام ۴ از ۴ — <b>تأیید نهایی</b>\n"
+        "────────────\n"
+        "• شناسه: <code>{account_id}</code>\n"
+        "• نقش: <code>{role}</code>\n"
+        "• شماره: <code>{phone}</code>\n\n"
+        "با تأیید، اکانت روی GitHub ایجاد و کد تأیید ارسال می‌شود."
     ),
     "accounts.confirm_login": (
         "لاگین اکانت موجود:\n"
-        "• id: <code>{account_id}</code>\n"
-        "• phone: <code>{phone}</code>\n\n"
-        "با تأیید فقط OTP روی رانر ارسال می‌شود (بدون scaffold)."
+        "• شناسه: <code>{account_id}</code>\n"
+        "• شماره: <code>{phone}</code>\n\n"
+        "با تأیید، کد تأیید برای این اکانت ارسال می‌شود."
     ),
     "accounts.sending": (
-        "⏳ در حال scaffold/دیسپچ send برای <code>{account_id}</code>...\n"
-        "کد تلگرام را همین‌جا بفرست وقتی رسید."
+        "⏳ در حال ایجاد اکانت <code>{account_id}</code>...\n"
+        "کد تأیید تلگرام را همین‌جا بفرست وقتی رسید."
     ),
     "accounts.await_otp": (
-        "✅ درخواست OTP ثبت شد برای <code>{account_id}</code> ({phone}).\n"
-        "کد را همین‌جا بفرست.\n"
-        "اگر اکانت رمز ابری دارد بعداً «دارم 2FA» را بزن.\n"
-        "run: {run_id}"
+        "✅ درخواست کد تأیید ثبت شد برای <code>{account_id}</code> ({phone}).\n"
+        "کد ۵ رقمی را همین‌جا بفرست.\n"
+        "اگر رمز ابری داری بعداً «دارم رمز ابری» را بزن."
     ),
     "accounts.otp_ready": (
-        "✅ ارسال OTP روی GHA برای <code>{account_id}</code> موفق بود (run {run_id}).\n"
+        "✅ کد تأیید برای <code>{account_id}</code> ارسال شد.\n"
         "کد تلگرام را همین‌جا بفرست."
     ),
     "accounts.otp_saved": (
-        "OTP ذخیره شد. در حال complete روی GHA برای <code>{account_id}</code>...\n"
-        "نتیجه را خودکار می‌فرستم؛ لازم نیست دکمه وضعیت را بزنی."
+        "کد ثبت شد. در حال تأیید نهایی <code>{account_id}</code>...\n"
+        "نتیجه را خودکار می‌فرستم."
     ),
     "accounts.ask_2fa": (
         "رمز ابری / 2FA تلگرام را بفرست.\n"
@@ -311,10 +326,7 @@ MESSAGES: dict[str, str] = {
         "⏱ هنوز نتیجه complete برای <code>{account_id}</code> نیامد (run {run_id}).\n"
         "می‌توانی «وضعیت GHA» را بزنی یا کمی صبر کنی."
     ),
-    "accounts.run_status": (
-        "GHA status=<code>{status}</code> conclusion=<code>{conclusion}</code>\n"
-        "{url}"
-    ),
+    "accounts.run_status": "وضعیت اجرا: {status_fa}\n{url}",
     "accounts.done": (
         "✅ لاگین موفق برای <code>{account_id}</code>.\n"
         "سشن‌سکرت باید ست شده باشد.\n"
@@ -331,14 +343,10 @@ MESSAGES: dict[str, str] = {
     "accounts.invalid_phone": "شماره نامعتبر است. مثال: <code>+98912xxxxxxx</code>",
     "accounts.invalid_otp": "کد OTP نامعتبر است (۴ تا ۸ رقم).",
     "accounts.invalid_2fa": "رمز 2FA خالی است.",
-    "accounts.missing_github": (
-        "تنظیمات GitHub ناقص است.\n"
-        "روی Worker این سکرت‌ها لازم است: "
-        "<code>GITHUB_TOKEN</code>, <code>GITHUB_REPO</code>, <code>BRIDGE_TOKEN</code>"
-    ),
+    "accounts.missing_github": "اتصال به GitHub برقرار نشد. با مدیر سیستم تماس بگیر.",
     "accounts.account_missing": "این اکانت در <code>config/accounts.json</code> نیست.",
     "accounts.exists": "این اکانت از قبل هست. برای لاگین از «لاگین موجود» استفاده کن.",
-    "accounts.error": "خطا: {error}",
+    "accounts.error": "⚠️ {error}",
     "accounts.github_unavailable": (
         "⏳ GitHub الان در دسترس نیست (قطعی موقت API).\n"
         "چند لحظه صبر کن و دوباره «تأیید و ارسال OTP» را بزن.\n"
@@ -371,7 +379,10 @@ MESSAGES: dict[str, str] = {
         "هشدار FloodWait/circuit هم به همین ربات می‌آید."
     ),
     "status.btn_refresh": "🔄 تازه‌سازی وضعیت",
-    "discovery.header": "🧺 <b>کشف — collector / inspector / linkdir</b>\n────────────",
+    "discovery.header": "🔍 <b>گروه‌یابی</b>\n────────────",
+    "discovery.pool_header": "🏊 <b>مدیریت Pool</b>\n────────────",
+    "discovery.inspect_header": "🔎 <b>Inspect / Harvest</b>\n────────────",
+    "discovery.linkdir_header": "🔗 <b>Linkdir</b>\n────────────",
     "discovery.empty": "هنوز اکانت collector/inspector/linkdir مال تو ثبت نشده.",
     "discovery.help": (
         "────────────\n"
@@ -389,9 +400,12 @@ MESSAGES: dict[str, str] = {
         "Linkdir: شمارش کاتالوگ، pause/resume، اجرای الان\n"
         "ادغام raw: عملیات → ادغام pool"
     ),
-    "discovery.btn_refresh": "🔄 تازه‌سازی کشف",
-    "discovery.btn_help": "📖 راهنمای کشف",
+    "discovery.btn_refresh": "🔄 تازه‌سازی",
+    "discovery.btn_help": "📖 راهنما",
     "discovery.btn_profile_status": "📄 وضعیت پروفایل",
+    "discovery.btn_sub_pool": "🏊 مدیریت Pool",
+    "discovery.btn_sub_inspect": "🔎 Inspect / Harvest",
+    "discovery.btn_sub_linkdir": "🔗 Linkdir",
     "discovery.btn_pool_status": "📦 وضعیت pool",
     "discovery.btn_pool_list": "📋 لیست raw",
     "discovery.btn_pool_list_ok": "📋 لیست ok",
@@ -432,7 +446,9 @@ MESSAGES: dict[str, str] = {
     "discovery.ask_catchup": "عدد catch_up را بفرست (۰ تا ۲۰۰):",
     "discovery.ask_to_promo_source": "کانال منبع promo را بفرست (مثل <code>@mychannel</code>):",
     "discovery.ask_to_promo_ref": "رفرنس گروه approved را بفرست:",
-    "promo.header": "📣 <b>تبلیغ — promo</b>\n────────────",
+    "promo.header": "📣 <b>تبلیغ</b>\n────────────",
+    "promo.routes_header": "🗺 <b>مسیرها و گروه‌ها</b>\n────────────",
+    "promo.safety_header": "🛡 <b>تنظیمات ایمنی</b>\n────────────",
     "promo.empty": "هنوز اکانت promo مال تو ثبت نشده.",
     "promo.help": (
         "────────────\n"
@@ -447,8 +463,10 @@ MESSAGES: dict[str, str] = {
         "لیست گروه‌ها، safety view/edit، صف، safety dump (runtime)، to-promo از کشف.\n"
         "دیگر لازم نیست به PV اکانت promo پیام بدهی."
     ),
-    "promo.btn_refresh": "🔄 تازه‌سازی تبلیغ",
-    "promo.btn_help": "📖 راهنمای تبلیغ",
+    "promo.btn_refresh": "🔄 تازه‌سازی",
+    "promo.btn_help": "📖 راهنما",
+    "promo.btn_sub_routes": "🗺 مسیرها و گروه‌ها",
+    "promo.btn_sub_safety": "🛡 تنظیمات ایمنی",
     "promo.btn_profile_status": "📄 وضعیت مسیرها",
     "promo.btn_dry": "🧪 dry_run",
     "promo.btn_pause": "⏸ pause promo",
@@ -538,7 +556,11 @@ MESSAGES: dict[str, str] = {
         "routes={route_count}\n"
         "{routes}"
     ),
-    "forward.header": "📨 <b>فوروارد — channel_forward</b>\n────────────",
+    "forward.header": "📨 <b>ارسال خودکار</b>\n────────────",
+    "forward.routes_header": "🗺 <b>مسیرها</b>\n────────────",
+    "forward.filter_header": "🔍 <b>فیلترها</b>\n────────────",
+    "forward.schedule_header": "🕐 <b>زمان‌بندی</b>\n────────────",
+    "forward.advanced_header": "⚙️ <b>تنظیمات پیشرفته</b>\n────────────",
     "forward.empty": "هنوز اکانت forward مال تو ثبت نشده.",
     "forward.help": (
         "────────────\n"
@@ -560,25 +582,31 @@ MESSAGES: dict[str, str] = {
     "forward.btn_setup": "⚡ راه‌اندازی سریع",
     "forward.btn_jobs": "📋 جاب‌های فوروارد",
     "forward.setup_step1": (
-        "⚡ <b>راه‌اندازی سریع فوروارد</b>\n"
+        "⚡ <b>راه‌اندازی سریع فوروارد</b> (۴ گام)\n"
         "────────────\n"
-        "گام ۱: ID اکانت forward را وارد کن.\n"
-        "<i>مثال: <code>forwarder</code></i>"
+        "گام ۱ از ۴ — <b>اکانت forward</b>\n"
+        "شناسه اکانت را وارد کن.\n"
+        "<i>مثال: <code>forwarder</code></i>\n\n"
+        "/cancel برای انصراف"
     ),
     "forward.setup_step2": (
         "✅ اکانت: <code>{account_id}</code>\n\n"
-        "گام ۲: کانال مبدأ (source) را وارد کن.\n"
-        "<i>مثال: <code>@source_channel</code> یا آیدی عددی</i>"
+        "گام ۲ از ۴ — <b>کانال مبدأ</b>\n"
+        "آدرس کانالی که می‌خواهی از آن فوروارد کنی.\n"
+        "<i>مثال: <code>@source_channel</code> یا آیدی عددی</i>\n\n"
+        "/cancel برای انصراف"
     ),
     "forward.setup_step3": (
         "✅ مبدأ: <code>{source}</code>\n\n"
-        "گام ۳: کانال مقصد (destination) را وارد کن.\n"
-        "<i>مثال: <code>@dest_channel</code> یا آیدی عددی</i>"
+        "گام ۳ از ۴ — <b>کانال مقصد</b>\n"
+        "آدرس کانالی که پیام‌ها به آن فوروارد می‌شوند.\n"
+        "<i>مثال: <code>@dest_channel</code> یا آیدی عددی</i>\n\n"
+        "/cancel برای انصراف"
     ),
     "forward.setup_step4_filter": (
         "✅ مقصد: <code>{destination}</code>\n\n"
-        "گام ۴: فیلتر لینک‌ها روشن باشد؟\n"
-        "(لینک‌های خارجی از پیام‌ها حذف می‌شوند)"
+        "گام ۴ از ۴ — <b>فیلتر لینک‌ها</b>\n"
+        "آیا لینک‌های خارجی از پیام‌ها حذف شوند؟"
     ),
     "forward.setup_btn_yes_filter": "✅ بله، لینک‌ها حذف شوند",
     "forward.setup_btn_no_filter": "❌ خیر، بدون فیلتر",
@@ -612,45 +640,49 @@ MESSAGES: dict[str, str] = {
         "  <code>{source}</code> → <code>{destination}</code>\n"
         "  وضعیت: {status} | آخرین اجرا: {last_run}"
     ),
-    "forward.btn_refresh": "🔄 تازه‌سازی فوروارد",
-    "forward.btn_help": "📖 راهنمای فوروارد",
+    "forward.btn_refresh": "🔄 تازه‌سازی",
+    "forward.btn_help": "📖 راهنما",
     "forward.btn_profile_status": "📄 وضعیت مسیرها",
-    "forward.btn_dry": "🧪 dry_run",
-    "forward.btn_pause": "⏸ pause forward",
-    "forward.btn_resume": "▶️ resume forward",
-    "forward.btn_auto_join_on": "auto_join: on",
-    "forward.btn_auto_join_off": "auto_join: off",
-    "forward.btn_route_add": "➕ مسیر",
+    "forward.btn_dry": "🧪 شبیه‌سازی (dry)",
+    "forward.btn_pause": "⏸ توقف فوروارد",
+    "forward.btn_resume": "▶️ ادامه فوروارد",
+    "forward.btn_auto_join_on": "🔓 عضویت خودکار: روشن",
+    "forward.btn_auto_join_off": "🔒 عضویت خودکار: خاموش",
+    "forward.btn_sub_routes": "🗺 مسیرها",
+    "forward.btn_sub_filter": "🔍 فیلترها",
+    "forward.btn_sub_schedule": "🕐 زمان‌بندی",
+    "forward.btn_sub_advanced": "⚙️ پیشرفته",
+    "forward.btn_route_add": "➕ افزودن مسیر",
     "forward.btn_route_remove": "➖ حذف مسیر",
-    "forward.btn_route_set": "🔁 set مقصد",
-    "forward.btn_route_pause": "⏸ pause مسیر",
-    "forward.btn_route_resume": "▶️ resume مسیر",
-    "forward.btn_route_mode": "mode مسیر",
-    "forward.btn_visibility": "👁 visibility",
-    "forward.btn_claim": "📌 claim مسیر",
-    "forward.btn_dest_add": "➕ dest add",
-    "forward.btn_dest_remove": "➖ dest remove",
-    "forward.btn_filter_view": "🛠 وضعیت فیلتر",
-    "forward.btn_filter_on": "فیلتر: on",
-    "forward.btn_filter_off": "فیلتر: off",
-    "forward.btn_filter_links": "toggle links",
-    "forward.btn_filter_mentions": "toggle mentions",
-    "forward.btn_filter_hashtags": "toggle hashtags",
-    "forward.btn_filter_prefix": "filter prefix",
-    "forward.btn_filter_suffix": "filter suffix",
-    "forward.btn_filter_block": "filter block",
-    "forward.btn_filter_clear": "🧹 filter clear",
-    "forward.btn_schedule_view": "🗓 وضعیت schedule",
-    "forward.btn_schedule_on": "schedule: on",
-    "forward.btn_schedule_off": "schedule: off",
-    "forward.btn_schedule_tz": "schedule tz",
-    "forward.btn_schedule_days": "schedule days",
-    "forward.btn_schedule_hours": "schedule hours",
-    "forward.btn_schedule_clear": "🧹 schedule clear",
-    "forward.btn_media": "🎬 media filter",
-    "forward.btn_dedup": "🔁 dedup",
-    "forward.btn_delivery": "📤 delivery",
-    "forward.btn_import": "📥 import مسیرها",
+    "forward.btn_route_set": "🔁 تغییر مقصد",
+    "forward.btn_route_pause": "⏸ توقف مسیر",
+    "forward.btn_route_resume": "▶️ ادامه مسیر",
+    "forward.btn_route_mode": "🔀 حالت مسیر",
+    "forward.btn_visibility": "👁 دید‌پذیری",
+    "forward.btn_claim": "📌 ثبت مالکیت مسیر",
+    "forward.btn_dest_add": "➕ افزودن مقصد",
+    "forward.btn_dest_remove": "➖ حذف مقصد",
+    "forward.btn_filter_view": "📋 وضعیت فیلتر",
+    "forward.btn_filter_on": "✅ فیلتر: روشن",
+    "forward.btn_filter_off": "🚫 فیلتر: خاموش",
+    "forward.btn_filter_links": "🔗 حذف لینک‌ها",
+    "forward.btn_filter_mentions": "@ حذف منشن‌ها",
+    "forward.btn_filter_hashtags": "# حذف هشتگ‌ها",
+    "forward.btn_filter_prefix": "📝 پیشوند متن",
+    "forward.btn_filter_suffix": "📝 پسوند متن",
+    "forward.btn_filter_block": "🚫 کلمات مسدود",
+    "forward.btn_filter_clear": "🧹 پاک‌سازی فیلتر",
+    "forward.btn_schedule_view": "📋 وضعیت زمان‌بندی",
+    "forward.btn_schedule_on": "✅ زمان‌بندی: روشن",
+    "forward.btn_schedule_off": "🚫 زمان‌بندی: خاموش",
+    "forward.btn_schedule_tz": "🕐 منطقه زمانی",
+    "forward.btn_schedule_days": "📅 روزهای مجاز",
+    "forward.btn_schedule_hours": "⏰ بازه ساعتی",
+    "forward.btn_schedule_clear": "🧹 پاک‌سازی زمان‌بندی",
+    "forward.btn_media": "🎬 فیلتر رسانه",
+    "forward.btn_dedup": "🔁 حذف تکراری",
+    "forward.btn_delivery": "📤 تنظیمات ارسال",
+    "forward.btn_import": "📥 وارد کردن مسیرها",
     "forward.btn_queue_status": "📥 وضعیت صف",
     "forward.btn_queue_clear": "🧹 پاک کردن صف",
     "forward.ask_route_add": (
@@ -809,8 +841,13 @@ MESSAGES: dict[str, str] = {
     ),
     "cache.queue_cleared": (
         "🧹 صف <code>{queue}</code> / <code>{account_id}</code> "
-        "پاک شد ({cleared})\n{url}"
+        "پاک شد\n{url}"
     ),
+    "cache.queue_clear_confirm": (
+        "⚠️ پاک کردن صف <code>{account_id}</code>؟\n"
+        "همه پیام‌های در انتظار حذف می‌شوند."
+    ),
+    "cache.queue_clear_btn_confirm": "🧹 بله، صف پاک شود",
     "cache.dump": (
         "🛡 <code>{account_id}</code> / {action}\n"
         "exists=<code>{exists}</code>\n"
@@ -847,8 +884,7 @@ MESSAGES: dict[str, str] = {
     "ops.working": "⏳ در حال «{action}» روی GitHub Actions...",
     "ops.done": (
         "✅ {action} برای <code>{account_id}</code>\n"
-        "run=<code>{run_id}</code> status=<code>{status}</code> "
-        "conclusion=<code>{conclusion}</code>\n"
+        "وضعیت: {status}\n"
         "{url}"
     ),
     "ops.cancel_none": "ران فعالی برای <code>{account_id}</code> پیدا نشد.",
@@ -857,6 +893,63 @@ MESSAGES: dict[str, str] = {
         "اول از مدیریت → فعال‌سازی، بعد اجرا."
     ),
     "ops.cancelled": "عملیات لغو شد.",
+    # smart assignment engine
+    "assign.btn_menu": "🏭 تخصیص هوشمند",
+    "assign.btn_forward": "📨 فوروارد جدید",
+    "assign.btn_promo": "📣 پرومو جدید",
+    "assign.btn_list": "📋 لیست تخصیص‌ها",
+    "assign.btn_preview": "🔍 پیش‌نمایش",
+    "assign.btn_remove": "🗑 حذف تخصیص",
+    "assign.btn_confirm": "✅ تأیید و اجرا",
+    "assign.menu": (
+        "🏭 <b>تخصیص هوشمند</b>\n"
+        "────────────\n"
+        "موتور هوشمند مناسب‌ترین اکانت را بر اساس نقش، بار فعلی،\n"
+        "heartbeat و سابقه تخصیص انتخاب می‌کند.\n\n"
+        "📨 <b>فوروارد جدید</b> — اضافه کردن مسیر فوروارد\n"
+        "📣 <b>پرومو جدید</b> — اضافه کردن مسیر تبلیغ\n"
+        "📋 <b>لیست تخصیص‌ها</b> — مشاهده همه تخصیص‌های فعال\n"
+        "🔍 <b>پیش‌نمایش</b> — ببین کدام اکانت انتخاب می‌شد (بدون تغییر)"
+    ),
+    "assign.ask_fwd_source": "کانال <b>منبع</b> را بنویس (مثال: @channel_name یا t.me/channel):",
+    "assign.ask_fwd_dest": "کانال <b>مقصد</b> را بنویس:",
+    "assign.ask_promo_source": "کانال <b>منبع</b> برای تبلیغ را بنویس:",
+    "assign.ask_promo_groups": "گروه‌ها را با ویرگول جدا بنویس (مثال: @group1, @group2):",
+    "assign.ask_preview_type": 'نوع task را انتخاب کن: <code>forward</code> یا <code>promo</code>',
+    "assign.ask_preview_source": "کانال منبع را بنویس تا ببینی کدام اکانت انتخاب می‌شود:",
+    "assign.ask_remove_id": "ID تخصیص را بنویس (یا «حذف &lt;id&gt;» بفرست):",
+    "assign.bad_ref": "⚠️ مرجع نامعتبر است. یک @username یا لینک t.me بفرست.",
+    "assign.bad_type": "⚠️ فقط forward یا promo مجاز است.",
+    "assign.bad_remove_id": "⚠️ ID تخصیص را بنویس.",
+    "assign.working": "⏳ در حال انتخاب اکانت و اعمال تنظیمات...",
+    "assign.cancelled": "❌ عملیات لغو شد.",
+    "assign.no_eligible": (
+        "⚠️ هیچ اکانت واجد شرایطی پیدا نشد.\n"
+        "علت: <code>{reason}</code>\n\n"
+        "اطمینان حاصل کن که:\n"
+        "• حداقل یک اکانت با نقش forward/promo/full داری\n"
+        "• اکانت status=ready و enabled=true داشته باشد\n"
+        "• اکانت به سقف مسیر (20) نرسیده باشد"
+    ),
+    "assign.result_header": "✅ <b>تخصیص موفق</b>",
+    "assign.result_account": "اکانت: <code>{account_id}</code> ({label})",
+    "assign.result_type": "نوع: <code>{task_type}</code>",
+    "assign.result_source": "منبع: <code>{source}</code>",
+    "assign.result_target": "هدف: <code>{target}</code>",
+    "assign.result_score": "امتیاز موتور: <code>{score}</code>",
+    "assign.result_id": "ID تخصیص: <code>{assignment_id}</code>",
+    "assign.result_dispatch": "ران GHA: <code>{run_id}</code>\n{url}",
+    "assign.preview_header": "🔍 <b>پیش‌نمایش تخصیص</b>\nnوع: {task_type} | منبع: {source}",
+    "assign.preview_winner": "🏆 برنده: <code>{account_id}</code> — امتیاز: <code>{score}</code>",
+    "assign.preview_dest": "مقصد: <code>{dest}</code>",
+    "assign.preview_groups": "گروه‌ها: <code>{groups}</code>",
+    "assign.preview_breakdown": "جزئیات امتیاز:",
+    "assign.preview_runner_up": "🥈 نفر دوم: <code>{account_id}</code> — امتیاز: <code>{score}</code>",
+    "assign.preview_none": "⚠️ هیچ اکانت واجد شرایطی برای {task_type}/{source} پیدا نشد.",
+    "assign.list_header": "📋 <b>تخصیص‌های فعال</b> ({count} مورد)",
+    "assign.list_empty": "هیچ تخصیص فعالی وجود ندارد.",
+    "assign.list_remove_hint": "برای حذف: دکمه «🗑 حذف تخصیص» را بزن و ID را بفرست.",
+    "assign.remove_done": "✅ تخصیص <code>{assignment_id}</code> حذف شد.\n(پروفایل GitHub تغییر نکرد — برای حذف مسیر از منوی فوروارد/پرومو استفاده کن.)",
     # command control panel
     "cmd.btn_menu": "🎮 کنترل زنده",
     "cmd.btn_send": "📤 ارسال دستور",

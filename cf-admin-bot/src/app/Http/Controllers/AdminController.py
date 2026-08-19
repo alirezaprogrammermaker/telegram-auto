@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app.Http.Controllers.AccountsController import AccountsController
+from app.Http.Controllers.AssignmentController import AssignmentController
 from app.Http.Controllers.CommandController import CommandController
 from app.Http.Controllers.ForwardController import ForwardController
 from app.Http.Controllers.HelpController import HelpController
@@ -13,6 +14,7 @@ from app.Services.GitHubService import GitHubError
 from app.Services.RunOrchestratorService import RunOrchestratorService
 from app.Services.TelegramService import TelegramService
 from app.Support.GithubFactory import make_github
+from app.Support.ErrorFormat import friendly_error
 from app.Support.Lang import __
 from config.bot import BotConfig
 from config.menus import main_keyboard, settings_keyboard
@@ -33,6 +35,7 @@ class AdminController:
         self.forward = ForwardController(tg, config)
         self.help = HelpController(tg, config)
         self.commands = CommandController(tg, config)
+        self.assignment = AssignmentController(tg, config)
 
     def _runner(self) -> RunOrchestratorService | None:
         gh = make_github(self.config)
@@ -124,6 +127,8 @@ class AdminController:
         if await self.forward.handle(chat_id, user, t):
             return
         if await self.commands.handle(chat_id, user, t):
+            return
+        if await self.assignment.handle(chat_id, user, t):
             return
         if await self.help.handle(chat_id, user, t):
             return
@@ -263,7 +268,7 @@ class AdminController:
         except Exception as exc:
             await self.tg.send_message(
                 chat_id,
-                __("accounts.error", error=str(exc)[:240]),
+                __("accounts.error", error=friendly_error(exc)),
                 reply_markup=settings_keyboard(),
             )
             return
@@ -363,7 +368,7 @@ class AdminController:
                 detail = f"enabled={enabled}"
         except (GitHubError, Exception) as exc:
             await self.tg.send_message(
-                chat_id, __("accounts.error", error=str(exc)[:240]),
+                chat_id, __("accounts.error", error=friendly_error(exc)),
                 reply_markup=settings_keyboard(),
             )
             return

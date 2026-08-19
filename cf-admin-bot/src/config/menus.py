@@ -10,8 +10,8 @@ def main_keyboard() -> dict:
             [{"text": __("menu.btn_status")}, {"text": __("menu.btn_accounts")}],
             [{"text": __("menu.btn_discovery")}, {"text": __("menu.btn_promo")}],
             [{"text": __("menu.btn_forward")}, {"text": __("menu.btn_ops")}],
-            [{"text": __("cmd.btn_menu")}],
-            [{"text": __("menu.btn_help")}, {"text": __("menu.btn_settings")}],
+            [{"text": __("assign.btn_menu")}, {"text": __("menu.btn_settings")}],
+            [{"text": __("menu.btn_help")}],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
@@ -280,12 +280,28 @@ def modules_action_keyboard() -> dict:
 
 
 def discovery_menu_keyboard() -> dict:
+    """Top-level discovery menu — 5 rows max."""
     return {
         "keyboard": [
             [
                 {"text": __("discovery.btn_refresh")},
                 {"text": __("discovery.btn_profile_status")},
             ],
+            [{"text": __("discovery.btn_sub_pool")}],
+            [{"text": __("discovery.btn_sub_inspect")}],
+            [{"text": __("discovery.btn_sub_linkdir")}],
+            [
+                {"text": __("discovery.btn_help")},
+                {"text": __("accounts.btn_back")},
+            ],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def discovery_pool_keyboard() -> dict:
+    return {
+        "keyboard": [
             [
                 {"text": __("discovery.btn_pool_status")},
                 {"text": __("discovery.btn_pool_list")},
@@ -299,6 +315,15 @@ def discovery_menu_keyboard() -> dict:
                 {"text": __("discovery.btn_pool_reject")},
             ],
             [{"text": __("discovery.btn_to_promo")}],
+            [{"text": __("nav.btn_back")}],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def discovery_inspect_keyboard() -> dict:
+    return {
+        "keyboard": [
             [
                 {"text": __("discovery.btn_inspect_dry")},
                 {"text": __("discovery.btn_inspect_budget")},
@@ -307,6 +332,7 @@ def discovery_menu_keyboard() -> dict:
                 {"text": __("discovery.btn_inspect_pause")},
                 {"text": __("discovery.btn_inspect_resume")},
             ],
+            [{"text": __("discovery.btn_inspect_dump")}],
             [
                 {"text": __("discovery.btn_harvest_pause")},
                 {"text": __("discovery.btn_harvest_resume")},
@@ -315,10 +341,16 @@ def discovery_menu_keyboard() -> dict:
                 {"text": __("discovery.btn_harvest_add")},
                 {"text": __("discovery.btn_harvest_remove")},
             ],
-            [
-                {"text": __("discovery.btn_harvest_catchup")},
-                {"text": __("discovery.btn_inspect_dump")},
-            ],
+            [{"text": __("discovery.btn_harvest_catchup")}],
+            [{"text": __("nav.btn_back")}],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def discovery_linkdir_keyboard() -> dict:
+    return {
+        "keyboard": [
             [
                 {"text": __("discovery.btn_linkdir_counts")},
                 {"text": __("discovery.btn_linkdir_run")},
@@ -327,10 +359,7 @@ def discovery_menu_keyboard() -> dict:
                 {"text": __("discovery.btn_linkdir_pause")},
                 {"text": __("discovery.btn_linkdir_resume")},
             ],
-            [
-                {"text": __("discovery.btn_help")},
-                {"text": __("accounts.btn_back")},
-            ],
+            [{"text": __("nav.btn_back")}],
         ],
         "resize_keyboard": True,
     }
@@ -381,6 +410,16 @@ def help_topics_keyboard(buttons: list[str], *, back_label: str) -> dict:
     return {"keyboard": rows, "resize_keyboard": True}
 
 
+def queue_clear_confirm_keyboard() -> dict:
+    return {
+        "keyboard": [
+            [{"text": __("cache.queue_clear_btn_confirm")}],
+            [{"text": __("accounts.btn_cancel")}],
+        ],
+        "resize_keyboard": True,
+    }
+
+
 def forward_setup_keyboard() -> dict:
     """Simple keyboard during the quick-setup wizard."""
     return {
@@ -393,6 +432,7 @@ def forward_setup_keyboard() -> dict:
 
 
 def forward_menu_keyboard() -> dict:
+    """Top-level forward menu — compact."""
     return {
         "keyboard": [
             [
@@ -408,10 +448,22 @@ def forward_menu_keyboard() -> dict:
                 {"text": __("forward.btn_pause")},
                 {"text": __("forward.btn_resume")},
             ],
+            [{"text": __("forward.btn_sub_routes")}],
+            [{"text": __("forward.btn_sub_filter")}],
+            [{"text": __("forward.btn_sub_schedule")}],
+            [{"text": __("forward.btn_sub_advanced")}],
             [
-                {"text": __("forward.btn_auto_join_on")},
-                {"text": __("forward.btn_auto_join_off")},
+                {"text": __("forward.btn_help")},
+                {"text": __("accounts.btn_back")},
             ],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def forward_routes_keyboard() -> dict:
+    return {
+        "keyboard": [
             [
                 {"text": __("forward.btn_route_add")},
                 {"text": __("forward.btn_route_remove")},
@@ -431,6 +483,19 @@ def forward_menu_keyboard() -> dict:
                 {"text": __("forward.btn_dest_remove")},
             ],
             [
+                {"text": __("forward.btn_auto_join_on")},
+                {"text": __("forward.btn_auto_join_off")},
+            ],
+            [{"text": __("nav.btn_back")}],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def forward_filter_keyboard() -> dict:
+    return {
+        "keyboard": [
+            [
                 {"text": __("forward.btn_filter_view")},
                 {"text": __("forward.btn_filter_on")},
                 {"text": __("forward.btn_filter_off")},
@@ -446,6 +511,15 @@ def forward_menu_keyboard() -> dict:
                 {"text": __("forward.btn_filter_block")},
             ],
             [{"text": __("forward.btn_filter_clear")}],
+            [{"text": __("nav.btn_back")}],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def forward_schedule_keyboard() -> dict:
+    return {
+        "keyboard": [
             [
                 {"text": __("forward.btn_schedule_view")},
                 {"text": __("forward.btn_schedule_on")},
@@ -457,6 +531,15 @@ def forward_menu_keyboard() -> dict:
                 {"text": __("forward.btn_schedule_hours")},
             ],
             [{"text": __("forward.btn_schedule_clear")}],
+            [{"text": __("nav.btn_back")}],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def forward_advanced_keyboard() -> dict:
+    return {
+        "keyboard": [
             [
                 {"text": __("forward.btn_media")},
                 {"text": __("forward.btn_dedup")},
@@ -467,16 +550,14 @@ def forward_menu_keyboard() -> dict:
                 {"text": __("forward.btn_queue_status")},
                 {"text": __("forward.btn_queue_clear")},
             ],
-            [
-                {"text": __("forward.btn_help")},
-                {"text": __("accounts.btn_back")},
-            ],
+            [{"text": __("nav.btn_back")}],
         ],
         "resize_keyboard": True,
     }
 
 
 def promo_menu_keyboard() -> dict:
+    """Top-level promo menu — compact."""
     return {
         "keyboard": [
             [
@@ -488,24 +569,51 @@ def promo_menu_keyboard() -> dict:
                 {"text": __("promo.btn_pause")},
                 {"text": __("promo.btn_resume")},
             ],
+            [{"text": __("promo.btn_sub_routes")}],
+            [{"text": __("promo.btn_sub_safety")}],
             [
-                {"text": __("promo.btn_mode_forward")},
-                {"text": __("promo.btn_mode_copy")},
+                {"text": __("promo.btn_queue_status")},
+                {"text": __("promo.btn_queue_clear")},
             ],
+            [
+                {"text": __("promo.btn_help")},
+                {"text": __("accounts.btn_back")},
+            ],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def promo_routes_keyboard() -> dict:
+    return {
+        "keyboard": [
             [
                 {"text": __("promo.btn_route_add")},
                 {"text": __("promo.btn_route_remove")},
+            ],
+            [
                 {"text": __("promo.btn_route_mode")},
+                {"text": __("promo.btn_route_pause")},
+                {"text": __("promo.btn_route_resume")},
+            ],
+            [
+                {"text": __("promo.btn_mode_forward")},
+                {"text": __("promo.btn_mode_copy")},
             ],
             [
                 {"text": __("promo.btn_group_add")},
                 {"text": __("promo.btn_group_remove")},
                 {"text": __("promo.btn_groups")},
             ],
-            [
-                {"text": __("promo.btn_route_pause")},
-                {"text": __("promo.btn_route_resume")},
-            ],
+            [{"text": __("nav.btn_back")}],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def promo_safety_keyboard() -> dict:
+    return {
+        "keyboard": [
             [
                 {"text": __("promo.btn_safety_view")},
                 {"text": __("promo.btn_safety_dump")},
@@ -519,14 +627,7 @@ def promo_menu_keyboard() -> dict:
                 {"text": __("promo.btn_safety_cooldown")},
                 {"text": __("promo.btn_safety_tz")},
             ],
-            [
-                {"text": __("promo.btn_queue_status")},
-                {"text": __("promo.btn_queue_clear")},
-            ],
-            [
-                {"text": __("promo.btn_help")},
-                {"text": __("accounts.btn_back")},
-            ],
+            [{"text": __("nav.btn_back")}],
         ],
         "resize_keyboard": True,
     }
