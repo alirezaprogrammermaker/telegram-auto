@@ -175,10 +175,10 @@ def cmd_export_secret(secret_name: str) -> dict:
     encoded = base64.b64encode(
         json.dumps(portable, ensure_ascii=True).encode("ascii")
     ).decode("ascii")
-    # Pipe body on stdin so it never appears in process argv / logs.
+    # Pipe body on stdin (do not use "--body -" — gh stores literal "-" on some runners).
     env = os.environ.copy()
     proc = subprocess.run(
-        ["gh", "secret", "set", secret_name, "--body", "-"],
+        ["gh", "secret", "set", secret_name],
         cwd=str(ROOT),
         input=encoded,
         capture_output=True,
