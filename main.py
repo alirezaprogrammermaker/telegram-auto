@@ -9,6 +9,7 @@ import signal
 import sys
 
 from app.client import build_client
+from app.command_poller import build_poller
 from app.config import load_app_config
 from app.loader import load_modules, stop_modules
 from app.logging_setup import setup_logging
@@ -94,10 +95,19 @@ async def run() -> None:
                 max_runtime,
             )
 
+        # Start remote command poller (no-op if bridge is not configured)
+        poller = build_poller(runtime)
+        poller_task = None
+        if poller is not None:
+            poller_task = asyncio.ensure_future(poller.run(stop_event))
+            logger.info("command_poller: task started")
+
         logger.info("App running. Press Ctrl+C to stop.")
         disconnected = asyncio.ensure_future(client.run_until_disconnected())
         stopped = asyncio.ensure_future(stop_event.wait())
         waits = [disconnected, stopped]
+        if poller_task is not None:
+            waits.append(poller_task)
         timeout = max_runtime if max_runtime > 0 else None
 
         done, pending = await asyncio.wait(

@@ -10,7 +10,8 @@ def main_keyboard() -> dict:
             [{"text": __("menu.btn_status")}, {"text": __("menu.btn_accounts")}],
             [{"text": __("menu.btn_discovery")}, {"text": __("menu.btn_promo")}],
             [{"text": __("menu.btn_forward")}, {"text": __("menu.btn_ops")}],
-            [{"text": __("menu.btn_settings")}],
+            [{"text": __("cmd.btn_menu")}],
+            [{"text": __("menu.btn_help")}, {"text": __("menu.btn_settings")}],
         ],
         "resize_keyboard": True,
         "is_persistent": True,
@@ -250,6 +251,34 @@ def status_menu_keyboard() -> dict:
     }
 
 
+def settings_keyboard() -> dict:
+    return {
+        "keyboard": [
+            [
+                {"text": __("settings.btn_demote")},
+                {"text": __("settings.btn_stats")},
+            ],
+            [{"text": __("settings.btn_modules")}],
+            [{"text": __("accounts.btn_back")}],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def modules_action_keyboard() -> dict:
+    return {
+        "keyboard": [
+            [
+                {"text": __("settings.modules_btn_on")},
+                {"text": __("settings.modules_btn_off")},
+                {"text": __("settings.modules_btn_reload")},
+            ],
+            [{"text": __("accounts.btn_cancel")}],
+        ],
+        "resize_keyboard": True,
+    }
+
+
 def discovery_menu_keyboard() -> dict:
     return {
         "keyboard": [
@@ -307,9 +336,69 @@ def discovery_menu_keyboard() -> dict:
     }
 
 
+def help_hub_keyboard() -> dict:
+    from app.Support.HelpButtons import back_main_button, category_button
+
+    return {
+        "keyboard": [
+            [{"text": category_button("general")}],
+            [{"text": category_button("discovery")}],
+            [{"text": category_button("promo")}],
+            [{"text": category_button("forward")}],
+            [{"text": back_main_button()}],
+        ],
+        "resize_keyboard": True,
+    }
+
+
+def help_categories_keyboard(buttons: list[str]) -> dict:
+    from app.Support.HelpButtons import back_main_button
+
+    rows: list[list[dict[str, str]]] = []
+    row: list[dict[str, str]] = []
+    for label in buttons:
+        row.append({"text": label})
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([{"text": back_main_button()}])
+    return {"keyboard": rows, "resize_keyboard": True}
+
+
+def help_topics_keyboard(buttons: list[str], *, back_label: str) -> dict:
+    rows: list[list[dict[str, str]]] = []
+    row: list[dict[str, str]] = []
+    for label in buttons:
+        row.append({"text": label})
+        if len(row) == 2:
+            rows.append(row)
+            row = []
+    if row:
+        rows.append(row)
+    rows.append([{"text": back_label}])
+    return {"keyboard": rows, "resize_keyboard": True}
+
+
+def forward_setup_keyboard() -> dict:
+    """Simple keyboard during the quick-setup wizard."""
+    return {
+        "keyboard": [
+            [{"text": __("forward.setup_btn_yes_filter")}, {"text": __("forward.setup_btn_no_filter")}],
+            [{"text": __("accounts.btn_cancel")}],
+        ],
+        "resize_keyboard": True,
+    }
+
+
 def forward_menu_keyboard() -> dict:
     return {
         "keyboard": [
+            [
+                {"text": __("forward.btn_setup")},
+                {"text": __("forward.btn_jobs")},
+            ],
             [
                 {"text": __("forward.btn_refresh")},
                 {"text": __("forward.btn_profile_status")},
@@ -406,20 +495,38 @@ def promo_menu_keyboard() -> dict:
             [
                 {"text": __("promo.btn_route_add")},
                 {"text": __("promo.btn_route_remove")},
+                {"text": __("promo.btn_route_mode")},
             ],
             [
                 {"text": __("promo.btn_group_add")},
+                {"text": __("promo.btn_group_remove")},
+                {"text": __("promo.btn_groups")},
+            ],
+            [
                 {"text": __("promo.btn_route_pause")},
+                {"text": __("promo.btn_route_resume")},
+            ],
+            [
+                {"text": __("promo.btn_safety_view")},
+                {"text": __("promo.btn_safety_dump")},
+            ],
+            [
+                {"text": __("promo.btn_safety_delay")},
+                {"text": __("promo.btn_safety_budget")},
+            ],
+            [
+                {"text": __("promo.btn_safety_windows")},
+                {"text": __("promo.btn_safety_cooldown")},
+                {"text": __("promo.btn_safety_tz")},
             ],
             [
                 {"text": __("promo.btn_queue_status")},
                 {"text": __("promo.btn_queue_clear")},
             ],
             [
-                {"text": __("promo.btn_safety_dump")},
                 {"text": __("promo.btn_help")},
+                {"text": __("accounts.btn_back")},
             ],
-            [{"text": __("accounts.btn_back")}],
         ],
         "resize_keyboard": True,
     }

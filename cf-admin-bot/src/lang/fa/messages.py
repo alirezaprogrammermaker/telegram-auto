@@ -29,6 +29,7 @@ MESSAGES: dict[str, str] = {
     "menu.btn_promo": "📣 تبلیغ",
     "menu.btn_forward": "📨 فوروارد",
     "menu.btn_ops": "🛠 عملیات",
+    "menu.btn_help": "📖 راهنما",
     "menu.btn_settings": "⚙️ تنظیمات",
     "menu.status": (
         "📊 <b>وضعیت</b>\n"
@@ -38,12 +39,12 @@ MESSAGES: dict[str, str] = {
     "menu.discovery": (
         "🧺 <b>کشف گروه</b>\n"
         "────────────\n"
-        "وضعیت collector/inspector + راهنمای دستورات روی خودِ اکانت Telethon."
+        "مدیریت pool، inspect، harvest و linkdir — همهٔ کنترل از این ربات."
     ),
     "menu.promo": (
         "📣 <b>تبلیغ</b>\n"
         "────────────\n"
-        "وضعیت اکانت‌های promo + راهنمای `/promo` روی سشن تبلیغ."
+        "مدیریت مسیرها، safety، صف و پروفایل promo — از همین ربات."
     ),
     "menu.ops": (
         "🛠 <b>عملیات</b>\n"
@@ -58,6 +59,34 @@ MESSAGES: dict[str, str] = {
     ),
     "menu.settings_no_admins": "— هنوز ادمینی نیست",
     "menu.settings_admin_line": "• {label} (<code>{telegram_id}</code>)",
+    # ── settings sub-actions ──────────────────────────────────────────
+    "settings.btn_demote": "👤 حذف ادمین",
+    "settings.btn_stats": "📊 آمار اکانت",
+    "settings.btn_modules": "🔧 ماژول‌ها",
+    "settings.demote_pick": (
+        "👤 <b>حذف ادمین</b>\n"
+        "ID یا username ادمینی که می‌خواهی به user تبدیل شود را بنویس:"
+    ),
+    "settings.demote_no_others": "ادمین دیگری برای حذف وجود ندارد.",
+    "settings.demote_bad_id": "ID وارد شده معتبر نیست. عدد telegram_id یا @username وارد کن.",
+    "settings.demote_self": "نمی‌توانی خودت را حذف کنی.",
+    "settings.demote_not_admin": "این کاربر ادمین نیست.",
+    "settings.demote_done": "✅ {label} (<code>{telegram_id}</code>) به user تبدیل شد.",
+    "settings.stats_pick": "📊 ID اکانت را برای دریافت آمار وارد کن:",
+    "settings.stats_no_accounts": "هیچ اکانتی ثبت نشده.",
+    "settings.modules_pick": "🔧 ID اکانت را برای مدیریت ماژول‌ها وارد کن:",
+    "settings.modules_no_accounts": "هیچ اکانتی ثبت نشده.",
+    "settings.modules_ask_action": (
+        "🔧 اکانت <code>{account_id}</code>\n"
+        "عملیات را انتخاب کن:"
+    ),
+    "settings.modules_btn_on": "✅ روشن",
+    "settings.modules_btn_off": "🚫 خاموش",
+    "settings.modules_btn_reload": "🔄 ریلود",
+    "settings.modules_reload_note": "ریلود پیکربندی (patch enabled=true)",
+    "settings.modules_done": (
+        "✅ <code>{account_id}</code> — ماژول‌ها: <b>{action}</b>\n{detail}"
+    ),
     "menu.unknown": (
         "دستور ناشناخته.\n"
         "/start برای منو، یا از دکمه‌های پایین استفاده کن."
@@ -66,13 +95,26 @@ MESSAGES: dict[str, str] = {
         "راهنما:\n"
         "/start — منوی اصلی\n"
         "/whoami — شناسه تلگرام\n"
+        "📖 راهنما — راهنمای پویا از D1\n"
         "/admins — لیست ادمین‌ها\n"
-        "اکانت‌ها — افزودن، لاگین، فعال‌سازی، لاگ‌اوت، حذف\n"
-        "عملیات — اجرا / کنسل / ریستارت / ادغام pool روی GHA\n"
-        "وضعیت — داشبورد اکانت + آخرین ران\n"
-        "کشف / تبلیغ / فوروارد — وضعیت نقش‌ها + کنترل پروفایل\n"
-        "/cancel — لغو ویزارد\n"
-        "رمز مدیر را فقط یک‌بار برای ارتقا بفرست."
+        "/cancel — لغو ویزارد"
+    ),
+    "help.hub_header": "📖 <b>راهنمای telegram-auto</b>",
+    "help.hub_pick": "دسته را انتخاب کن:",
+    "help.topic_pick": "یک موضوع را انتخاب کن:",
+    "help.btn_cat_general": "❓ 📖 راهنمای عمومی",
+    "help.btn_cat_discovery": "❓ 🧺 راهنمای کشف",
+    "help.btn_cat_promo": "❓ 📣 راهنمای تبلیغ",
+    "help.btn_cat_forward": "❓ 📨 راهنمای فوروارد",
+    "help.btn_back_hub": "❓ ⬅️ دسته‌های راهنما",
+    "help.btn_back_panel": "❓ ⬅️ بازگشت",
+    "help.btn_back_main": "❓ ⬅️ منوی اصلی",
+    "help.back_to_panel": "بازگشت به منوی {panel}.",
+    "help.unknown": "موضوع نامعتبر — از دکمه‌های ❓ استفاده کن.",
+    "help.empty": "راهنمایی ثبت نشده است.",
+    "help.stale_keyboard": (
+        "کیبورد راهنما منقضی شده.\n"
+        "دوباره از منو «📖 راهنما» وارد شو."
     ),
     # accounts wizard
     "accounts.menu": (
@@ -400,8 +442,9 @@ MESSAGES: dict[str, str] = {
     "promo.help_full": (
         "📣 <b>راهنمای تبلیغ</b>\n"
         "────────────\n"
-        "از ربات: وضعیت پروفایل، dry_run، pause، mode، add/remove مسیر، "
-        "group add، صف، safety dump، to-promo از منوی کشف.\n"
+        "از ربات: وضعیت پروفایل، dry_run، pause/resume (سراسری و per-route)، "
+        "mode (سراسری و per-route)، add/remove مسیر، group add/remove، "
+        "لیست گروه‌ها، safety view/edit، صف، safety dump (runtime)، to-promo از کشف.\n"
         "دیگر لازم نیست به PV اکانت promo پیام بدهی."
     ),
     "promo.btn_refresh": "🔄 تازه‌سازی تبلیغ",
@@ -416,6 +459,16 @@ MESSAGES: dict[str, str] = {
     "promo.btn_route_remove": "➖ حذف مسیر",
     "promo.btn_group_add": "➕ گروه به مسیر",
     "promo.btn_route_pause": "⏸ pause مسیر",
+    "promo.btn_route_resume": "▶️ resume مسیر",
+    "promo.btn_route_mode": "mode مسیر",
+    "promo.btn_group_remove": "➖ حذف گروه",
+    "promo.btn_groups": "📋 لیست گروه‌ها",
+    "promo.btn_safety_view": "🛡 safety پروفایل",
+    "promo.btn_safety_delay": "safety delay",
+    "promo.btn_safety_budget": "safety budget",
+    "promo.btn_safety_windows": "safety windows",
+    "promo.btn_safety_cooldown": "safety cooldown",
+    "promo.btn_safety_tz": "safety tz",
     "promo.btn_queue_status": "📥 وضعیت صف",
     "promo.btn_queue_clear": "🧹 پاک کردن صف",
     "promo.btn_safety_dump": "🛡 safety dump",
@@ -428,6 +481,55 @@ MESSAGES: dict[str, str] = {
     "promo.ask_group_add": (
         "فرمت:\n"
         "<code>@channel @group</code>"
+    ),
+    "promo.ask_group_remove": (
+        "فرمت:\n"
+        "<code>@channel @group</code>"
+    ),
+    "promo.ask_route_mode": (
+        "فرمت:\n"
+        "<code>@channel forward|copy</code>"
+    ),
+    "promo.ask_groups": (
+        "منبع مسیر را بفرست (<code>@channel</code>) یا "
+        "<code>همه</code> برای همه مسیرها."
+    ),
+    "promo.groups_one": (
+        "📋 گروه‌های <code>{source}</code>\n"
+        "{lines}"
+    ),
+    "promo.groups_all": (
+        "📋 همه مسیرها ({count})\n"
+        "{lines}"
+    ),
+    "promo.ask_safety_delay": (
+        "بازه تأخیر (ثانیه):\n"
+        "<code>70 190</code>"
+    ),
+    "promo.ask_safety_budget": (
+        "بودجه:\n"
+        "<code>daily 28 hourly 5</code>"
+    ),
+    "promo.ask_safety_windows": (
+        "بازه‌های فعال:\n"
+        "<code>09:30-13:00,16:00-22:00</code>"
+    ),
+    "promo.ask_safety_cooldown": (
+        "کول‌داون گروه (دقیقه):\n"
+        "<code>50</code>"
+    ),
+    "promo.ask_safety_tz": (
+        "منطقه زمانی:\n"
+        "<code>Asia/Tehran</code>"
+    ),
+    "promo.safety_config": (
+        "🛡 safety پروفایل / <code>{account_id}</code>\n"
+        "{lines}\n\n"
+        "برای وضعیت runtime (circuit/صف) از «safety dump» استفاده کن."
+    ),
+    "promo.safety_done": (
+        "✅ safety به‌روز شد / <code>{account_id}</code>\n"
+        "{lines}"
     ),
     "promo.profile_status": (
         "📣 <code>{account_id}</code>\n"
@@ -453,6 +555,62 @@ MESSAGES: dict[str, str] = {
         "<b>زمان‌بندی:</b> on/off، tz، days، hours، clear\n"
         "<b>سایر:</b> media، dedup، delivery، import، صف\n\n"
         "دیگر لازم نیست به PV اکانت forward پیام بدهی."
+    ),
+    # ── quick-setup wizard ────────────────────────────────────────────
+    "forward.btn_setup": "⚡ راه‌اندازی سریع",
+    "forward.btn_jobs": "📋 جاب‌های فوروارد",
+    "forward.setup_step1": (
+        "⚡ <b>راه‌اندازی سریع فوروارد</b>\n"
+        "────────────\n"
+        "گام ۱: ID اکانت forward را وارد کن.\n"
+        "<i>مثال: <code>forwarder</code></i>"
+    ),
+    "forward.setup_step2": (
+        "✅ اکانت: <code>{account_id}</code>\n\n"
+        "گام ۲: کانال مبدأ (source) را وارد کن.\n"
+        "<i>مثال: <code>@source_channel</code> یا آیدی عددی</i>"
+    ),
+    "forward.setup_step3": (
+        "✅ مبدأ: <code>{source}</code>\n\n"
+        "گام ۳: کانال مقصد (destination) را وارد کن.\n"
+        "<i>مثال: <code>@dest_channel</code> یا آیدی عددی</i>"
+    ),
+    "forward.setup_step4_filter": (
+        "✅ مقصد: <code>{destination}</code>\n\n"
+        "گام ۴: فیلتر لینک‌ها روشن باشد؟\n"
+        "(لینک‌های خارجی از پیام‌ها حذف می‌شوند)"
+    ),
+    "forward.setup_btn_yes_filter": "✅ بله، لینک‌ها حذف شوند",
+    "forward.setup_btn_no_filter": "❌ خیر، بدون فیلتر",
+    "forward.setup_saving": "⏳ در حال ذخیره و راه‌اندازی...",
+    "forward.setup_done": (
+        "✅ <b>فوروارد راه‌اندازی شد!</b>\n"
+        "────────────\n"
+        "اکانت: <code>{account_id}</code>\n"
+        "مبدأ: <code>{source}</code>\n"
+        "مقصد: <code>{destination}</code>\n"
+        "فیلتر لینک: {filter_links}\n\n"
+        "Workflow بلافاصله trigger شد 🚀\n"
+        "Job ID: <code>{job_id}</code>"
+    ),
+    "forward.setup_dispatch_fail": (
+        "✅ تنظیمات ذخیره شد اما dispatch ناموفق بود:\n{error}\n\n"
+        "Job ID: <code>{job_id}</code>\n"
+        "می‌توانی دستی از منوی وضعیت trigger کنی."
+    ),
+    "forward.setup_no_workflow": (
+        "اکانت <code>{account_id}</code> workflow ندارد.\n"
+        "ابتدا از منوی اکانت‌ها آن را enable کن."
+    ),
+    "forward.jobs_header": (
+        "📋 <b>جاب‌های فوروارد</b>\n"
+        "────────────\n"
+    ),
+    "forward.jobs_empty": "هیچ جابی تنظیم نشده.",
+    "forward.jobs_line": (
+        "• <code>{job_id}</code> | <code>{account_id}</code>\n"
+        "  <code>{source}</code> → <code>{destination}</code>\n"
+        "  وضعیت: {status} | آخرین اجرا: {last_run}"
     ),
     "forward.btn_refresh": "🔄 تازه‌سازی فوروارد",
     "forward.btn_help": "📖 راهنمای فوروارد",
@@ -699,6 +857,40 @@ MESSAGES: dict[str, str] = {
         "اول از مدیریت → فعال‌سازی، بعد اجرا."
     ),
     "ops.cancelled": "عملیات لغو شد.",
+    # command control panel
+    "cmd.btn_menu": "🎮 کنترل زنده",
+    "cmd.btn_send": "📤 ارسال دستور",
+    "cmd.btn_status": "📡 وضعیت زنده",
+    "cmd.btn_confirm_send": "✅ تایید و ارسال",
+    "cmd.menu": (
+        "🎮 <b>کنترل زنده اکانت‌ها</b>\n"
+        "────────────\n"
+        "دستور فوری به اکانت‌های در حال اجرا بفرست.\n"
+        "اکانت ظرف ≤۳۰ ثانیه دستور را اجرا می‌کند.\n\n"
+        "📤 <b>ارسال دستور</b> — دستور جدید بفرست\n"
+        "📡 <b>وضعیت زنده</b> — heartbeat و دستورات اخیر"
+    ),
+    "cmd.pick_account": "اکانت مقصد را انتخاب کن:",
+    "cmd.pick_account_status": "اکانت را برای دیدن وضعیت زنده انتخاب کن:",
+    "cmd.pick_type": "نوع دستور برای <code>{account_id}</code> را انتخاب کن:",
+    "cmd.ask_payload": "نوع دستور: <code>{cmd_type}</code>\n\n{hint}",
+    "cmd.invalid_payload": "ورودی نامعتبر.\n\n{hint}",
+    "cmd.invalid_type": "نوع دستور نامعتبر است. از دکمه‌ها استفاده کن.",
+    "cmd.confirm": (
+        "تأیید ارسال دستور؟\n\n"
+        "اکانت: <code>{account_id}</code>\n"
+        "نوع: <code>{cmd_type}</code>\n"
+        "payload: <code>{payload}</code>"
+    ),
+    "cmd.sent": (
+        "✅ دستور ارسال شد!\n"
+        "id: <code>{cmd_id}…</code>\n"
+        "اکانت: <code>{account_id}</code>\n"
+        "نوع: <code>{cmd_type}</code>\n\n"
+        "اکانت ظرف ≤۳۰ ثانیه اجرا می‌کند."
+    ),
+    "cmd.enqueue_error": "❌ خطا در ارسال دستور: {error}",
+    "cmd.cancelled": "دستور لغو شد.",
     # system
     "health.hint": "POST Telegram updates to /webhook",
     "error.no_token": "no_token",

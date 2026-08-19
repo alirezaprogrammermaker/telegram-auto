@@ -2,6 +2,7 @@ from urllib.parse import urlparse
 
 from app.Http.Controllers.InternalAlertsController import InternalAlertsController
 from app.Http.Controllers.InternalCacheController import InternalCacheController
+from app.Http.Controllers.InternalCommandsController import InternalCommandsController
 from app.Http.Controllers.InternalLinkDirController import InternalLinkDirController
 from app.Http.Controllers.InternalLoginController import InternalLoginController
 from app.Http.Controllers.InternalPoolController import InternalPoolController
@@ -50,6 +51,10 @@ class Default(WorkerEntrypoint):
         if path.startswith("/internal/linkdir/") and method in {"GET", "POST"}:
             action = path[len("/internal/linkdir/") :]
             return await InternalLinkDirController(self.env).handle(request, action)
+
+        if path.startswith("/internal/commands/") and method in {"GET", "POST"}:
+            action = path[len("/internal/commands/") :].strip("/")
+            return await InternalCommandsController(self.env).handle(request, action)
 
         return Response.json(
             {"ok": False, "error": __("error.not_found")}, status=404
