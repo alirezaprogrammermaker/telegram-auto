@@ -71,6 +71,15 @@
       "session_name": "likyab1",
       "session_secret": "TELEGRAM_SESSION_B64_LIKYAB1",
       "profile": "config/accounts/likyab1.json"
+    },
+    {
+      "id": "linkdir2",
+      "label": "linkdir2 (linkdir)",
+      "enabled": false,
+      "workflow": "run-linkdir-linkdir2.yml",
+      "session_name": "linkdir2",
+      "session_secret": "TELEGRAM_SESSION_B64_LINKDIR2",
+      "profile": "config/accounts/linkdir2.json"
     }
   ]
 }

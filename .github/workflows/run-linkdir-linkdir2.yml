@@ -1,0 +1,37 @@
+# Auto-scaffolded by admin-bot / scripts/scaffold_account.py
+# Linkdir discovery batches (search/snowball/rerank) — not a long-running bot.
+# Session secret: TELEGRAM_SESSION_B64_LINKDIR2
+# Profile: config/accounts/linkdir2.json
+
+name: run-linkdir-linkdir2
+
+on:
+  schedule:
+    - cron: "49 6 * * *"
+    - cron: "56 11 * * *"
+    - cron: "3 16 * * *"
+    - cron: "10 21 * * *"
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: "Comma steps: search,snowball,rerank"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  linkdir2:
+    uses: ./.github/workflows/run-linkdir.yml
+    with:
+      account_id: linkdir2
+      session_name: linkdir2
+      steps: ${{ inputs.steps || '' }}
+    secrets:
+      API_ID: ${{ secrets.API_ID }}
+      API_HASH: ${{ secrets.API_HASH }}
+      TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64_LINKDIR2 }}
+      ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+      ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
