@@ -56,7 +56,7 @@ param(
 
     [string]$Account = "",
     [string]$Phone = "",
-    [ValidateSet("", "promo", "forward", "full", "collector", "inspector")]
+    [ValidateSet("", "promo", "forward", "full", "collector", "inspector", "linkdir")]
     [string]$Role = "",
     [string]$Label = "",
     [int]$Tail = 60,

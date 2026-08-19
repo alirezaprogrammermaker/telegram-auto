@@ -1,0 +1,160 @@
+# Reusable short batch for linkdir discovery (search / snowball / rerank).
+# Callers: .github/workflows/run-linkdir-<account_id>.yml
+
+name: run-linkdir
+
+on:
+  workflow_call:
+    inputs:
+      account_id:
+        description: "Account id (matches config/accounts/*.json)"
+        required: true
+        type: string
+      session_name:
+        description: "Telethon session file stem"
+        required: true
+        type: string
+      steps:
+        description: "Comma steps override (empty = profile or default)"
+        required: false
+        type: string
+        default: ""
+    secrets:
+      API_ID:
+        required: true
+      API_HASH:
+        required: true
+      TELEGRAM_SESSION_B64:
+        required: false
+      ADMIN_BOT_BRIDGE_URL:
+        required: false
+      ADMIN_BOT_BRIDGE_TOKEN:
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    concurrency:
+      group: linkdir-${{ inputs.account_id }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout repo
+        run: |
+          set -euo pipefail
+          rm -rf ./* ./.[!.]* 2>/dev/null || true
+          git clone --depth 1 --branch master \
+            "https://github.com/${GITHUB_REPOSITORY}.git" repo
+          shopt -s dotglob
+          mv repo/* .
+          rm -rf repo
+
+      - name: Install deps
+        run: |
+          set -euo pipefail
+          python3 -m pip install --upgrade --quiet pip
+          python3 -m pip install --quiet -r requirements.txt
+
+      - name: Restore account data
+        uses: actions/cache@v4
+        with:
+          path: data/${{ inputs.account_id }}
+          key: data-${{ github.repository }}-${{ inputs.account_id }}-v1
+          restore-keys: |
+            data-${{ github.repository }}-${{ inputs.account_id }}-
+            data-${{ github.repository }}-
+
+      - name: Restore shared pool (linkdir catalog cache)
+        uses: actions/cache@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1-${{ github.run_id }}
+          restore-keys: |
+            pool-${{ github.repository }}-v1-
+            pool-${{ github.repository }}-
+
+      - name: Prepare session
+        id: prep
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          SESSION_NAME: ${{ inputs.session_name }}
+          TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
+          DATA_DIR: data/${{ inputs.account_id }}
+        run: |
+          set -euo pipefail
+          python3 scripts/prepare_gha_session.py
+          if [ ! -f "${SESSION_NAME}.session" ]; then
+            echo "No session — skip"
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+
+      - name: Gate paused / disabled profile
+        id: gate
+        if: steps.prep.outputs.skip != 'true'
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          STEPS_INPUT: ${{ inputs.steps }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json, os, pathlib
+          aid = os.environ["ACCOUNT_ID"]
+          path = pathlib.Path(f"config/accounts/{aid}.json")
+          steps_in = (os.environ.get("STEPS_INPUT") or "").strip()
+          paused = False
+          steps = steps_in or "search,snowball,rerank"
+          if path.is_file():
+              profile = json.loads(path.read_text(encoding="utf-8"))
+              mod = ((profile.get("modules") or {}).get("linkdir_collect") or {})
+              if not bool(mod.get("enabled", True)):
+                  paused = True
+              if bool(mod.get("paused")):
+                  paused = True
+              if not steps_in and mod.get("steps"):
+                  steps = str(mod.get("steps"))
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a", encoding="utf-8") as fh:
+              fh.write(f"skip={'true' if paused else 'false'}\n")
+              fh.write(f"steps={steps}\n")
+          print(f"gate paused={paused} steps={steps}")
+          PY
+
+      - name: Run linkdir pipeline
+        if: steps.prep.outputs.skip != 'true' && steps.gate.outputs.skip != 'true'
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          SESSION_NAME: ${{ inputs.session_name }}
+          DATA_DIR: data/${{ inputs.account_id }}
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          set -euo pipefail
+          printf 'API_ID=%s\nAPI_HASH=%s\nSESSION_NAME=%s\n' \
+            "$API_ID" "$API_HASH" "$SESSION_NAME" > .env
+          STEPS="${{ steps.gate.outputs.steps }}"
+          python3 -m experiments.linkdir_finders.pipeline once \
+            --steps "$STEPS" \
+            --session "$SESSION_NAME" \
+            --account-id "$ACCOUNT_ID"
+
+      - name: Save shared pool
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1-${{ github.run_id }}
+
+      - name: Save account data
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/${{ inputs.account_id }}
+          key: data-${{ github.repository }}-${{ inputs.account_id }}-v1-${{ github.run_id }}

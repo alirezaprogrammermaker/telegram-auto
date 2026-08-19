@@ -27,6 +27,11 @@ ALLOWED: dict[str, dict[str, str]] = {
         "catch_up_limit": "catchup",
         "directories": "dirs",
     },
+    "linkdir_collect": {
+        "paused": "bool",
+        "enabled": "bool",
+        "steps": "steps",
+    },
     "promo_spread": {
         "dry_run": "bool",
         "paused": "bool",
@@ -47,6 +52,7 @@ ALLOWED: dict[str, dict[str, str]] = {
 ROLE_MODULE = {
     "inspector": "group_inspect",
     "collector": "link_harvest",
+    "linkdir": "linkdir_collect",
     "promo": "promo_spread",
     "forward": "channel_forward",
 }
@@ -87,6 +93,13 @@ class ProfileConfigService:
                 if mode not in {"forward", "copy"}:
                     raise GitHubError("mode must be forward|copy")
                 out[key] = mode
+            elif kind == "steps":
+                text = str(value or "").strip()
+                parts = [p.strip() for p in text.split(",") if p.strip()]
+                allowed_steps = {"search", "snowball", "rerank"}
+                if not parts or any(p not in allowed_steps for p in parts):
+                    raise GitHubError("steps must be search,snowball,rerank")
+                out[key] = ",".join(parts)
             elif kind == "dirs":
                 if value is None:
                     out[key] = []
@@ -167,6 +180,13 @@ class ProfileConfigService:
                 "paused": cfg.get("paused"),
                 "dry_run": cfg.get("dry_run"),
                 "daily_join_budget": cfg.get("daily_join_budget"),
+            }
+        if module == "linkdir_collect":
+            return {
+                "module": module,
+                "enabled": cfg.get("enabled"),
+                "paused": cfg.get("paused"),
+                "steps": cfg.get("steps") or "search,snowball,rerank",
             }
         if module == "channel_forward":
             return {

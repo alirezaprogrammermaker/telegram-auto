@@ -108,6 +108,7 @@ MESSAGES: dict[str, str] = {
     "accounts.role_forward": "forward",
     "accounts.role_collector": "collector",
     "accounts.role_inspector": "inspector",
+    "accounts.role_linkdir": "linkdir",
     "accounts.role_full": "full",
     "accounts.list_header": "📋 <b>اکانت‌های تو</b>\n────────────",
     "accounts.list_empty": "هنوز اکانتی برای تو ثبت نشده. از «افزودن» شروع کن.",
@@ -327,11 +328,12 @@ MESSAGES: dict[str, str] = {
         "هشدار FloodWait/circuit هم به همین ربات می‌آید."
     ),
     "status.btn_refresh": "🔄 تازه‌سازی وضعیت",
-    "discovery.header": "🧺 <b>کشف — collector / inspector</b>\n────────────",
-    "discovery.empty": "هنوز اکانت collector/inspector مال تو ثبت نشده.",
+    "discovery.header": "🧺 <b>کشف — collector / inspector / linkdir</b>\n────────────",
+    "discovery.empty": "هنوز اکانت collector/inspector/linkdir مال تو ثبت نشده.",
     "discovery.help": (
         "────────────\n"
-        "همهٔ کنترل کشف/pool/inspect/harvest از همین ربات است.\n"
+        "همهٔ کنترل کشف/pool/inspect/harvest/linkdir از همین ربات است.\n"
+        "نقش <code>linkdir</code>: طی روز چند بار لینکدونی جدید کشف می‌کند (D1).\n"
         "دیگر لازم نیست به PV اکانت‌ها پیام بدهی.\n"
         "تغییر پروفایل از ران بعدی اثر دارد (در صورت نیاز ریستارت)."
     ),
@@ -341,6 +343,7 @@ MESSAGES: dict[str, str] = {
         "Pool: وضعیت/لیست/تأیید/رد/to-promo\n"
         "Inspect: dry_run، pause، بودجه، dump\n"
         "Harvest: pause، لینکدونی add/remove، catchup\n"
+        "Linkdir: شمارش کاتالوگ، pause/resume، اجرای الان\n"
         "ادغام raw: عملیات → ادغام pool"
     ),
     "discovery.btn_refresh": "🔄 تازه‌سازی کشف",
@@ -363,6 +366,22 @@ MESSAGES: dict[str, str] = {
     "discovery.btn_harvest_add": "➕ لینکدونی",
     "discovery.btn_harvest_remove": "➖ حذف لینکدونی",
     "discovery.btn_harvest_catchup": "⏫ catchup",
+    "discovery.btn_linkdir_counts": "📊 کاتالوگ linkdir",
+    "discovery.btn_linkdir_run": "▶️ اجرای linkdir",
+    "discovery.btn_linkdir_pause": "⏸ pause linkdir",
+    "discovery.btn_linkdir_resume": "▶️ resume linkdir",
+    "discovery.linkdir_counts": (
+        "📊 <b>کاتالوگ لینکدونی (D1)</b>\n"
+        "────────────\n"
+        "total=<code>{total}</code> | promo_ready=<code>{promo_ready}</code>\n"
+        "keep=<code>{keep}</code> review=<code>{review}</code> junk=<code>{junk}</code>\n"
+        "active=<code>{active}</code> stale=<code>{stale}</code>"
+    ),
+    "discovery.linkdir_run_done": (
+        "▶️ جمع‌آوری linkdir برای <code>{account_id}</code> دیسپچ شد.\n"
+        "run=<code>{run_id}</code> status=<code>{status}</code>\n"
+        "{url}"
+    ),
     "discovery.no_role_account": "اکانت مناسب این نقش نداری.",
     "discovery.ask_budget": "بودجه روزانه جوین را بفرست (۱ تا ۱۲):",
     "discovery.invalid_budget": "عدد نامعتبر — بین ۱ تا ۱۲.",

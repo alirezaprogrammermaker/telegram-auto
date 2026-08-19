@@ -38,8 +38,9 @@ ST_PROMO_ROUTE_ADD = "promo_route_add"
 ST_PROMO_ROUTE_SOURCE = "promo_route_source"
 ST_PROMO_GROUP_ADD = "promo_group_add"
 
-DISCOVERY_PICK_ROLES = ("collector", "inspector", "full")
+DISCOVERY_PICK_ROLES = ("collector", "inspector", "linkdir", "full")
 PROMO_PICK_ROLES = ("promo", "full")
+LINKDIR_PICK_ROLES = ("linkdir", "full")
 CANCEL_TEXTS = frozenset({"/cancel", "انصراف"})
 
 
@@ -105,6 +106,12 @@ class PanelController:
                 f"dry_run={desc.get('dry_run')} "
                 f"budget={desc.get('daily_join_budget')}"
             )
+        if module == "linkdir_collect":
+            return (
+                f"enabled={desc.get('enabled')} "
+                f"paused={desc.get('paused')} "
+                f"steps={desc.get('steps')}"
+            )
         return json.dumps(desc, ensure_ascii=False)[:300]
 
     @staticmethod
@@ -165,15 +172,32 @@ class PanelController:
         tid = int(user.get("telegram_id"))
         await UserState.clear(self.db, tid)
         snap = await self._status().discovery_snapshot(tid)
-        body = "\n".join(
-            [
-                __("discovery.header"),
-                self._format_lines(snap, empty_key="discovery.empty"),
-                __("discovery.help"),
-            ]
-        )
+        counts_line = ""
+        try:
+            from app.Services.LinkDirCatalogService import LinkDirCatalogService
+
+            counts = await LinkDirCatalogService(self.db).counts()
+            counts_line = __(
+                "discovery.linkdir_counts",
+                total=counts.get("total", 0),
+                promo_ready=counts.get("promo_ready", 0),
+                keep=counts.get("keep", 0),
+                review=counts.get("review", 0),
+                junk=counts.get("junk", 0),
+                active=counts.get("active", 0),
+                stale=counts.get("stale", 0),
+            )
+        except Exception:
+            counts_line = ""
+        parts = [
+            __("discovery.header"),
+            self._format_lines(snap, empty_key="discovery.empty"),
+        ]
+        if counts_line:
+            parts.extend(["", counts_line])
+        parts.append(__("discovery.help"))
         await self.tg.send_message(
-            chat_id, body, reply_markup=discovery_menu_keyboard()
+            chat_id, "\n".join(parts), reply_markup=discovery_menu_keyboard()
         )
 
     async def show_promo(self, chat_id: int, user: User) -> None:
@@ -373,6 +397,24 @@ class PanelController:
                 chat_id, user, roles=("collector", "full"), intent="harvest_catchup"
             )
             return True
+        if t == __("discovery.btn_linkdir_counts"):
+            await self._show_linkdir_counts(chat_id)
+            return True
+        if t == __("discovery.btn_linkdir_run"):
+            await self._start_disc_pick(
+                chat_id, user, roles=LINKDIR_PICK_ROLES, intent="linkdir_run"
+            )
+            return True
+        if t == __("discovery.btn_linkdir_pause"):
+            await self._start_disc_pick(
+                chat_id, user, roles=LINKDIR_PICK_ROLES, intent="linkdir_pause"
+            )
+            return True
+        if t == __("discovery.btn_linkdir_resume"):
+            await self._start_disc_pick(
+                chat_id, user, roles=LINKDIR_PICK_ROLES, intent="linkdir_resume"
+            )
+            return True
 
         # Promo profile
         if t == __("promo.btn_profile_status"):
@@ -545,6 +587,10 @@ class PanelController:
                 self.db, tid, ST_DISC_CATCHUP, {"account_id": aid}
             )
             await self.tg.send_message(chat_id, __("discovery.ask_catchup"))
+            return
+        if intent == "linkdir_run":
+            await UserState.clear(self.db, tid)
+            await self._dispatch_linkdir_run(chat_id, user, aid)
             return
 
         await self._apply_profile_intent(chat_id, user, aid, intent)
@@ -806,7 +852,8 @@ class PanelController:
         modules = {
             "collector": ["link_harvest"],
             "inspector": ["group_inspect"],
-        }.get(role, ["link_harvest", "group_inspect"])
+            "linkdir": ["linkdir_collect"],
+        }.get(role, ["link_harvest", "group_inspect", "linkdir_collect"])
 
         parts: list[str] = []
         try:
@@ -875,7 +922,7 @@ class PanelController:
             )
             return
         tid = int(user.get("telegram_id"))
-        discovery = intent.startswith(("inspect", "harvest"))
+        discovery = intent.startswith(("inspect", "harvest", "linkdir"))
         kb = discovery_menu_keyboard() if discovery else promo_menu_keyboard()
         try:
             if intent == "inspect_dry":
@@ -897,6 +944,14 @@ class PanelController:
             elif intent == "harvest_resume":
                 result = await prof.patch(
                     tid, account_id, "link_harvest", {"paused": False}
+                )
+            elif intent == "linkdir_pause":
+                result = await prof.patch(
+                    tid, account_id, "linkdir_collect", {"paused": True}
+                )
+            elif intent == "linkdir_resume":
+                result = await prof.patch(
+                    tid, account_id, "linkdir_collect", {"paused": False}
                 )
             elif intent == "promo_dry":
                 result = await prof.toggle_bool(
@@ -1062,6 +1117,65 @@ class PanelController:
                 account_id=aid,
                 module="link_harvest",
                 detail=str(result.get("merged") or "")[:300],
+            ),
+            reply_markup=discovery_menu_keyboard(),
+        )
+
+    async def _show_linkdir_counts(self, chat_id: int) -> None:
+        try:
+            from app.Services.LinkDirCatalogService import LinkDirCatalogService
+
+            counts = await LinkDirCatalogService(self.db).counts()
+            body = __(
+                "discovery.linkdir_counts",
+                total=counts.get("total", 0),
+                promo_ready=counts.get("promo_ready", 0),
+                keep=counts.get("keep", 0),
+                review=counts.get("review", 0),
+                junk=counts.get("junk", 0),
+                active=counts.get("active", 0),
+                stale=counts.get("stale", 0),
+            )
+        except Exception as exc:
+            body = __("accounts.error", error=str(exc)[:200])
+        await self.tg.send_message(
+            chat_id, body, reply_markup=discovery_menu_keyboard()
+        )
+
+    async def _dispatch_linkdir_run(self, chat_id: int, user: User, account_id: str) -> None:
+        runner = self._runner()
+        if not runner:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.missing_github"),
+                reply_markup=discovery_menu_keyboard(),
+            )
+            return
+        tid = int(user.get("telegram_id"))
+        try:
+            info = await runner.dispatch(tid, account_id)
+        except AccountConflictError as exc:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.not_owned", account_id=exc.account_id or account_id),
+                reply_markup=discovery_menu_keyboard(),
+            )
+            return
+        except GitHubError as exc:
+            await self.tg.send_message(
+                chat_id,
+                __("accounts.error", error=str(exc)[:240]),
+                reply_markup=discovery_menu_keyboard(),
+            )
+            return
+        await self.tg.send_message(
+            chat_id,
+            __(
+                "discovery.linkdir_run_done",
+                account_id=account_id,
+                run_id=info.get("run_id") or "-",
+                status=info.get("status") or "-",
+                url=info.get("html_url") or "",
             ),
             reply_markup=discovery_menu_keyboard(),
         )

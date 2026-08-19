@@ -32,6 +32,18 @@ def cron_for(account_id: str) -> str:
     return f"{minute} */6 * * *"
 
 
+def linkdir_crons(account_id: str) -> list[str]:
+    base = sum(ord(c) for c in account_id) % 50
+    hours = (6, 11, 16, 21)
+    return [f"{(base + i * 7) % 60} {h} * * *" for i, h in enumerate(hours)]
+
+
+def workflow_name_for(role: str, account_id: str) -> str:
+    if role == "linkdir":
+        return f"run-linkdir-{account_id}.yml"
+    return f"run-account-{account_id}.yml"
+
+
 def profile_modules(role: str) -> dict:
     if role == "promo":
         return {
@@ -91,6 +103,20 @@ def profile_modules(role: str) -> dict:
                 "timezone": "Asia/Tehran",
             },
         }
+    if role == "linkdir":
+        return {
+            "auto_reply": {"enabled": False},
+            "channel_forward": {"enabled": False},
+            "digest": {"enabled": False},
+            "promo_spread": {"enabled": False},
+            "link_harvest": {"enabled": False},
+            "group_inspect": {"enabled": False},
+            "linkdir_collect": {
+                "enabled": True,
+                "paused": False,
+                "steps": "search,snowball,rerank",
+            },
+        }
     # full
     return {
         "auto_reply": {"enabled": True},
@@ -145,12 +171,51 @@ jobs:
 """
 
 
+def linkdir_workflow_yaml(account_id: str, session_name: str, secret: str) -> str:
+    cron_block = "\n".join(
+        f'    - cron: "{c}"' for c in linkdir_crons(account_id)
+    )
+    return f"""# Auto-scaffolded by scripts/scaffold_account.py
+# Linkdir discovery batches — not a long-running bot.
+
+name: run-linkdir-{account_id}
+
+on:
+  schedule:
+{cron_block}
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: "Comma steps: search,snowball,rerank"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  {account_id}:
+    uses: ./.github/workflows/run-linkdir.yml
+    with:
+      account_id: {account_id}
+      session_name: {session_name}
+      steps: ${{{{ inputs.steps || '' }}}}
+    secrets:
+      API_ID: ${{{{ secrets.API_ID }}}}
+      API_HASH: ${{{{ secrets.API_HASH }}}}
+      TELEGRAM_SESSION_B64: ${{{{ secrets.{secret} }}}}
+      ADMIN_BOT_BRIDGE_URL: ${{{{ secrets.ADMIN_BOT_BRIDGE_URL }}}}
+      ADMIN_BOT_BRIDGE_TOKEN: ${{{{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}}}
+"""
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Scaffold a Telegram account for GHA")
     parser.add_argument("account_id", help="lowercase id, e.g. promo2")
     parser.add_argument(
         "--role",
-        choices=["promo", "forward", "full", "collector", "inspector"],
+        choices=["promo", "forward", "full", "collector", "inspector", "linkdir"],
         default="promo",
         help="Module profile template",
     )
@@ -183,7 +248,7 @@ def main() -> int:
     session_name = (args.session_name or account_id).strip()
     secret = secret_name_for(account_id)
     label = args.label.strip() or f"{account_id} ({args.role})"
-    workflow_name = f"run-account-{account_id}.yml"
+    workflow_name = workflow_name_for(args.role, account_id)
     profile_path = ACCOUNTS_DIR / f"{account_id}.json"
     workflow_path = WORKFLOWS / workflow_name
 
@@ -236,10 +301,11 @@ def main() -> int:
     )
 
     cron = cron_for(account_id)
-    workflow_path.write_text(
-        workflow_yaml(account_id, session_name, secret, cron),
-        encoding="utf-8",
-    )
+    if args.role == "linkdir":
+        wf_body = linkdir_workflow_yaml(account_id, session_name, secret)
+    else:
+        wf_body = workflow_yaml(account_id, session_name, secret, cron)
+    workflow_path.write_text(wf_body, encoding="utf-8")
 
     entry = {
         "id": account_id,

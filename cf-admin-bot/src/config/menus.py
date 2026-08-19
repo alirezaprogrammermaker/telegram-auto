@@ -175,9 +175,10 @@ def roles_keyboard() -> dict:
                 {"text": __("accounts.role_inspector")},
             ],
             [
+                {"text": __("accounts.role_linkdir")},
                 {"text": __("accounts.role_full")},
-                {"text": __("accounts.btn_cancel")},
             ],
+            [{"text": __("accounts.btn_cancel")}],
         ],
         "resize_keyboard": True,
     }
@@ -287,6 +288,14 @@ def discovery_menu_keyboard() -> dict:
             [
                 {"text": __("discovery.btn_harvest_catchup")},
                 {"text": __("discovery.btn_inspect_dump")},
+            ],
+            [
+                {"text": __("discovery.btn_linkdir_counts")},
+                {"text": __("discovery.btn_linkdir_run")},
+            ],
+            [
+                {"text": __("discovery.btn_linkdir_pause")},
+                {"text": __("discovery.btn_linkdir_resume")},
             ],
             [
                 {"text": __("discovery.btn_help")},

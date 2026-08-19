@@ -1,0 +1,76 @@
+{
+  "session_name": "easy_seen",
+  "sessions": ["easy_seen"],
+  "queries": [
+    "لینکدونی",
+    "لینک دونی",
+    "تبادل لینک",
+    "لینک رایگان",
+    "گروه لینک",
+    "تبلیغ رایگان",
+    "کانال لینک",
+    "گروه یاب",
+    "کانال یاب",
+    "گپ دونی",
+    "عضویت رایگان",
+    "link exchange",
+    "free ads telegram",
+    "links directory",
+    "invite links"
+  ],
+  "safety": {
+    "allow_joins": false,
+    "daily_joins": 0,
+    "daily_seed_reads": 20,
+    "daily_resolve_usernames": 30,
+    "daily_invite_peeks": 12,
+    "daily_message_fetches": 30,
+    "daily_profile_samples": 30,
+    "peer_flood_circuit_hours": 48,
+    "delay_seed_min": 4.0,
+    "delay_seed_max": 9.0,
+    "delay_resolve_min": 3.5,
+    "delay_resolve_max": 8.0,
+    "delay_invite_min": 5.0,
+    "delay_invite_max": 12.0,
+    "delay_hop_min": 10.0,
+    "delay_hop_max": 20.0,
+    "delay_min": 3.0,
+    "delay_max": 7.0
+  },
+  "search": {
+    "limit": 15,
+    "delay": 2.0,
+    "enrich": 12,
+    "sample": 25
+  },
+  "snowball": {
+    "hops": 2,
+    "seed_limit": 8,
+    "messages_per_seed": 30,
+    "max_new_per_run": 20,
+    "max_resolve_per_run": 25,
+    "max_invite_peek_per_run": 10,
+    "enrich_sample": 18,
+    "min_seed_rank": 55,
+    "prefer_seed_only": true
+  },
+  "rerank": {
+    "limit": 25,
+    "sample": 25,
+    "delay": 2.0,
+    "include_review": true,
+    "include_stale": true,
+    "stale_limit": 8
+  },
+  "catalog": {
+    "stale_hours": 72,
+    "promo_limit": 200
+  },
+  "pipeline": {
+    "steps": ["search", "snowball", "rerank"],
+    "connect_retries": 8,
+    "retry_sleep": 20,
+    "loop_hours": 12
+  }
+}

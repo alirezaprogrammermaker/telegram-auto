@@ -1,0 +1,108 @@
+# EXPERIMENTAL — linkdir catalog refresh only.
+# Does NOT enable promo modules or change account production configs.
+# Keeps data/pool/linkdir_*.json alive via Actions cache.
+
+name: linkdir-catalog-refresh
+
+on:
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: "Comma steps: search,snowball,rerank"
+        required: false
+        type: string
+        default: "search,snowball,rerank"
+      session_name:
+        description: "Telethon session file name"
+        required: false
+        type: string
+        default: "easy_seen"
+  schedule:
+    # Every 12 hours — disable by removing this block if not ready
+    - cron: "0 */12 * * *"
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore shared pool (catalog)
+        uses: actions/cache/restore@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1-${{ github.run_id }}
+          restore-keys: |
+            pool-${{ github.repository }}-v1-
+            pool-${{ github.repository }}-
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install deps
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade --quiet pip
+          python -m pip install --quiet -r requirements.txt
+
+      - name: Prepare session
+        env:
+          ACCOUNT_ID: elmira
+          SESSION_NAME: ${{ inputs.session_name || 'easy_seen' }}
+          TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64 }}
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+        run: |
+          set -euo pipefail
+          if [ -z "${API_ID:-}" ] || [ -z "${API_HASH:-}" ]; then
+            echo "API_ID/API_HASH secrets required" >&2
+            exit 1
+          fi
+          printf 'API_ID=%s\nAPI_HASH=%s\nSESSION_NAME=%s\n' "$API_ID" "$API_HASH" "$SESSION_NAME" > .env
+          python scripts/prepare_gha_session.py
+          if [ ! -f "${SESSION_NAME}.session" ]; then
+            echo "No session prepared — skip" >&2
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+        id: prep
+
+      - name: Run linkdir pipeline (experiment)
+        if: steps.prep.outputs.skip != 'true'
+        env:
+          SESSION_NAME: ${{ inputs.session_name || 'easy_seen' }}
+          PYTHONIOENCODING: utf-8
+          # Same bridge secrets as pool/alerts — syncs catalog to D1 when set
+          ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+        run: |
+          set -euo pipefail
+          STEPS="${{ inputs.steps || 'search,snowball,rerank' }}"
+          python -m experiments.linkdir_finders.pipeline once --steps "$STEPS" --session "$SESSION_NAME"
+
+      - name: Save shared pool (catalog)
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1-${{ github.run_id }}
+
+      - name: Upload promo_ready artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linkdir-promo-ready
+          path: |
+            data/pool/linkdir_promo_ready.json
+            data/pool/linkdir_catalog.json
+          if-no-files-found: warn
+          retention-days: 14

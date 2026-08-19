@@ -8,13 +8,14 @@ from typing import Any
 from app.Services.GitHubService import GitHubError, GitHubService
 
 ID_RE = re.compile(r"^[a-z][a-z0-9_]{1,31}$")
-ROLES = ("promo", "forward", "collector", "inspector", "full")
+ROLES = ("promo", "forward", "collector", "inspector", "linkdir", "full")
 REGISTRY_PATH = "config/accounts.json"
 ROLE_FA = {
     "promo": "تبلیغ",
     "forward": "فوروارد",
     "collector": "کالکتور",
     "inspector": "اینسپکتور",
+    "linkdir": "لینکدونی‌یاب",
     "full": "کامل",
 }
 LABEL_MAX_LEN = 64
@@ -29,6 +30,19 @@ def secret_name_for(account_id: str) -> str:
 def cron_for(account_id: str) -> str:
     minute = sum(ord(c) for c in account_id) % 50
     return f"{minute} */6 * * *"
+
+
+def linkdir_crons(account_id: str) -> list[str]:
+    """Four staggered slots across the day (UTC → ~morning/afternoon/evening Tehran)."""
+    base = sum(ord(c) for c in account_id) % 50
+    hours = (6, 11, 16, 21)
+    return [f"{(base + i * 7) % 60} {h} * * *" for i, h in enumerate(hours)]
+
+
+def workflow_name_for(role: str, account_id: str) -> str:
+    if role == "linkdir":
+        return f"run-linkdir-{account_id}.yml"
+    return f"run-account-{account_id}.yml"
 
 
 def profile_modules(role: str) -> dict[str, Any]:
@@ -71,6 +85,7 @@ def profile_modules(role: str) -> dict[str, Any]:
                 "directories": [],
             },
             "group_inspect": {"enabled": False},
+            "linkdir_collect": {"enabled": False},
         }
     if role == "inspector":
         return {
@@ -89,6 +104,21 @@ def profile_modules(role: str) -> dict[str, Any]:
                 "leave_after": True,
                 "timezone": "Asia/Tehran",
             },
+            "linkdir_collect": {"enabled": False},
+        }
+    if role == "linkdir":
+        return {
+            "auto_reply": {"enabled": False},
+            "channel_forward": {"enabled": False},
+            "digest": {"enabled": False},
+            "promo_spread": {"enabled": False},
+            "link_harvest": {"enabled": False},
+            "group_inspect": {"enabled": False},
+            "linkdir_collect": {
+                "enabled": True,
+                "paused": False,
+                "steps": "search,snowball,rerank",
+            },
         }
     return {
         "auto_reply": {"enabled": True},
@@ -104,6 +134,7 @@ def profile_modules(role: str) -> dict[str, Any]:
         },
         "link_harvest": {"enabled": False},
         "group_inspect": {"enabled": False},
+        "linkdir_collect": {"enabled": False},
     }
 
 
@@ -140,6 +171,47 @@ jobs:
       ADMIN_PASSWORD: ${{{{ secrets.ADMIN_PASSWORD }}}}
       TELEGRAM_SESSION_B64: ${{{{ secrets.{secret} }}}}
       ADMIN_IDS: ${{{{ secrets.ADMIN_IDS }}}}
+"""
+
+
+def linkdir_workflow_yaml(account_id: str, session_name: str, secret: str) -> str:
+    cron_block = "\n".join(
+        f'    - cron: "{c}"' for c in linkdir_crons(account_id)
+    )
+    return f"""# Auto-scaffolded by admin-bot / scripts/scaffold_account.py
+# Linkdir discovery batches (search/snowball/rerank) — not a long-running bot.
+# Session secret: {secret}
+# Profile: config/accounts/{account_id}.json
+
+name: run-linkdir-{account_id}
+
+on:
+  schedule:
+{cron_block}
+  workflow_dispatch:
+    inputs:
+      steps:
+        description: "Comma steps: search,snowball,rerank"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  {account_id}:
+    uses: ./.github/workflows/run-linkdir.yml
+    with:
+      account_id: {account_id}
+      session_name: {session_name}
+      steps: ${{{{ inputs.steps || '' }}}}
+    secrets:
+      API_ID: ${{{{ secrets.API_ID }}}}
+      API_HASH: ${{{{ secrets.API_HASH }}}}
+      TELEGRAM_SESSION_B64: ${{{{ secrets.{secret} }}}}
+      ADMIN_BOT_BRIDGE_URL: ${{{{ secrets.ADMIN_BOT_BRIDGE_URL }}}}
+      ADMIN_BOT_BRIDGE_TOKEN: ${{{{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}}}
 """
 
 
@@ -214,7 +286,7 @@ class AccountScaffoldService:
         session_name = aid
         secret = secret_name_for(aid)
         human_label = (label or "").strip() or f"{aid} ({role_ok})"
-        workflow_name = f"run-account-{aid}.yml"
+        workflow_name = workflow_name_for(role_ok, aid)
         profile_path = f"config/accounts/{aid}.json"
         workflow_path = f".github/workflows/{workflow_name}"
         cron = cron_for(aid)
@@ -239,10 +311,14 @@ class AccountScaffoldService:
         else:
             rows.append(entry)
 
+        if role_ok == "linkdir":
+            wf_body = linkdir_workflow_yaml(aid, session_name, secret)
+        else:
+            wf_body = workflow_yaml(aid, session_name, secret, cron)
         files = {
             REGISTRY_PATH: json.dumps(registry, ensure_ascii=False, indent=2) + "\n",
             profile_path: json.dumps(profile, ensure_ascii=False, indent=2) + "\n",
-            workflow_path: workflow_yaml(aid, session_name, secret, cron),
+            workflow_path: wf_body,
         }
         commit = await self.github.commit_files(
             files,
@@ -445,22 +521,49 @@ class AccountScaffoldService:
             "session_name": str(profile.get("session_name") or session_name),
             "modules": profile_modules(role_ok),
         }
+        secret = (
+            str(existing.get("session_secret"))
+            if existing and existing.get("session_secret")
+            else secret_name_for(aid)
+        )
+        old_wf = (
+            str(existing.get("workflow"))
+            if existing and existing.get("workflow")
+            else workflow_name_for("promo", aid)
+        )
+        new_wf = workflow_name_for(role_ok, aid)
         if existing:
             existing["label"] = human
+            existing["workflow"] = new_wf
+
+        if role_ok == "linkdir":
+            wf_body = linkdir_workflow_yaml(aid, session_name, secret)
+        else:
+            wf_body = workflow_yaml(aid, session_name, secret, cron_for(aid))
 
         files = {
             REGISTRY_PATH: json.dumps(registry, ensure_ascii=False, indent=2) + "\n",
             profile_path: json.dumps(profile, ensure_ascii=False, indent=2) + "\n",
+            f".github/workflows/{new_wf}": wf_body,
         }
         commit = await self.github.commit_files(
             files,
             f"chore(accounts): set role {aid} -> {role_ok} via admin-bot",
         )
+        if old_wf != new_wf:
+            try:
+                await self.github.commit_tree_changes(
+                    {f".github/workflows/{old_wf}": {"delete": True}},
+                    f"chore(accounts): drop old workflow {old_wf} for {aid}",
+                )
+            except Exception:
+                pass
         return {
             "account_id": aid,
             "role": role_ok,
             "label": human,
             "profile": profile_path,
+            "workflow": new_wf,
             "commit": commit,
         }
 

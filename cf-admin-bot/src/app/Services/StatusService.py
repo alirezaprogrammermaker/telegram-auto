@@ -6,8 +6,9 @@ from typing import Any
 from app.Services.AccountService import AccountService
 from app.Services.GitHubService import GitHubService
 
-DISCOVERY_ROLES = frozenset({"collector", "inspector"})
+DISCOVERY_ROLES = frozenset({"collector", "inspector", "linkdir"})
 PROMO_ROLES = frozenset({"promo"})
+LINKDIR_ROLES = frozenset({"linkdir"})
 
 
 class StatusService:
@@ -65,3 +66,6 @@ class StatusService:
 
     async def promo_snapshot(self, user_id: int) -> dict[str, Any]:
         return await self.snapshot(user_id, roles=PROMO_ROLES)
+
+    async def linkdir_snapshot(self, user_id: int) -> dict[str, Any]:
+        return await self.snapshot(user_id, roles=LINKDIR_ROLES)

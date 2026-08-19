@@ -54,7 +54,8 @@ class RunOrchestratorService:
             raise AccountConflictError("account_disabled", account_id=account_id)
 
         inputs: dict[str, str] = {}
-        if max_runtime_seconds:
+        # Long-running account runners accept max_runtime; linkdir batches do not.
+        if max_runtime_seconds and not str(workflow).startswith("run-linkdir"):
             inputs["max_runtime_seconds"] = str(max_runtime_seconds)
 
         started = time.time()
