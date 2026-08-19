@@ -75,7 +75,7 @@
     {
       "id": "linkdir2",
       "label": "linkdir2 (linkdir)",
-      "enabled": false,
+      "enabled": true,
       "workflow": "run-linkdir-linkdir2.yml",
       "session_name": "linkdir2",
       "session_secret": "TELEGRAM_SESSION_B64_LINKDIR2",
