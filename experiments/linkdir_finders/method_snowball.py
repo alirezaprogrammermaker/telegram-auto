@@ -29,6 +29,7 @@ from telethon.tl.types import ChatInvite, ChatInviteAlready, ChatInvitePeek
 
 from modules.channel_forward.refs import invite_hash
 from modules.group_pool.pool import extract_links_from_text, normalize_group_ref
+from experiments.linkdir_finders.blocklist import blocklist_from_config, is_blocked, normalize_username
 from experiments.linkdir_finders.catalog import LinkDirCatalog
 from experiments.linkdir_finders.enrich import resolve_and_profile
 from experiments.linkdir_finders.safety_guard import SafetyGuard
@@ -197,6 +198,7 @@ async def run_snowball(
     hops = max(1, min(3, int(sb.get("hops") or 2)))
     seed_limit = int(sb.get("seed_limit") or 10)
     min_rank = float(sb.get("min_seed_rank") or 55)
+    min_next_identity = float(sb.get("min_next_hop_identity") or 58)
     messages_per_seed = int(sb.get("messages_per_seed") or 35)
     max_new = int(sb.get("max_new_per_run") or 25)
     max_resolve = int(sb.get("max_resolve_per_run") or 30)
@@ -217,6 +219,7 @@ async def run_snowball(
         "keep": 0,
         "review": 0,
         "junk": 0,
+        "blocked_skipped": 0,
         "errors": 0,
         "stopped_reason": None,
         "safety": guard.snapshot(),
@@ -227,11 +230,21 @@ async def run_snowball(
         logger.warning("skip snowball — %s", stats["stopped_reason"])
         return stats
 
-    seeds = catalog.seeds_for_snowball(
+    raw_seeds = catalog.seeds_for_snowball(
         limit=seed_limit,
         min_rank=min_rank,
         prefer_seed_only=prefer_seed_only,
     )
+    blocked_usernames = blocklist_from_config(config)
+    bl_cfg = config.get("blocklist") or {}
+    skip_junk = bool(bl_cfg.get("skip_junk_catalog", True))
+
+    def _seed_blocked(seed: dict[str, Any]) -> bool:
+        u = normalize_username(str(seed.get("username") or seed.get("ref") or ""))
+        return bool(u and u in blocked_usernames)
+
+    seeds = [s for s in raw_seeds if not _seed_blocked(s)]
+    stats["blocked_skipped"] = len(raw_seeds) - len(seeds)
     if not seeds:
         stats["stopped_reason"] = "no_seeds"
         logger.warning("no seeds — run search/reclassify first")
@@ -249,6 +262,16 @@ async def run_snowball(
 
     known = catalog.known_refs()
     exclude = set(known)
+    for u in blocked_usernames:
+        exclude.add(f"@{u}")
+    if skip_junk:
+        for item in catalog.list_items(status="junk", limit=500):
+            ref = str(item.get("ref") or "").lower()
+            if ref:
+                exclude.add(ref)
+            uname = item.get("username")
+            if uname:
+                exclude.add(f"@{str(uname).lower()}")
     for s in seeds:
         if s.get("username"):
             exclude.add(f"@{str(s['username']).lower()}")
@@ -375,6 +398,9 @@ async def run_snowball(
             for ref, parent in username_candidates:
                 if stats["new_upserts"] >= max_new or stats["resolved"] >= max_resolve:
                     break
+                if is_blocked(ref, cfg=config):
+                    stats["blocked_skipped"] += 1
+                    continue
                 ok, why = guard.allow("resolve_username")
                 if not ok:
                     stats["stopped_reason"] = why
@@ -422,7 +448,8 @@ async def run_snowball(
                         hop < hops
                         and row.get("username")
                         and v in {"keep", "review"}
-                        and float(row.get("identity_score") or 0) >= 50
+                        and float(row.get("identity_score") or 0) >= min_next_identity
+                        and not is_blocked(str(row.get("ref") or row.get("username")), cfg=config)
                     ):
                         next_seeds.append(row)
                     logger.info(

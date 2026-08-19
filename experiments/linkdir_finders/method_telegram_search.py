@@ -13,6 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from experiments.linkdir_finders.blocklist import filter_blocked_rows, is_blocked
 from experiments.linkdir_finders.catalog import LinkDirCatalog
 from experiments.linkdir_finders.enrich import apply_rank, chat_kind, enrich_profile, sample_activity
 from experiments.linkdir_finders.job_queue import (
@@ -164,6 +165,8 @@ async def run_search(
                     if cid in seen_ids:
                         continue
                     seen_ids.add(cid)
+                if is_blocked(str(row.get("ref") or row.get("username")), cfg=config):
+                    continue
                 all_rows.append(row)
                 job_new += 1
             logger.info("  chats=%s new_unique=%s", len(rows), job_new)
@@ -180,7 +183,7 @@ async def run_search(
                 ),
                 reverse=True,
             )
-            targets = ranked[:enrich_n]
+            targets = filter_blocked_rows(ranked[:enrich_n], cfg=config)
             logger.info("enriching top %s …", len(targets))
             for idx, row in enumerate(targets, 1):
                 try:
