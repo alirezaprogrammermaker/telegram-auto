@@ -21,7 +21,17 @@
       "routes": [
         {
           "source": "@aads_posts",
-          "groups": [],
+          "groups": [
+            "@ShareTelegramInviteLinks",
+            "@LinkExchangeAcacia",
+            "@Dailylinkexchange",
+            "@ghrohsabt",
+            "@sabt_raygan1",
+            "@YZBAR8xbHMIzOTA0",
+            "@tabligatazadir",
+            "@TechnicLinks",
+            "@swgrouplinks"
+          ],
           "enabled": true,
           "paused": false,
           "mode": "forward"
