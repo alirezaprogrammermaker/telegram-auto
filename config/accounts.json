@@ -111,7 +111,7 @@
     {
       "id": "linkdir6",
       "label": "linkdir6 (linkdir)",
-      "enabled": false,
+      "enabled": true,
       "workflow": "run-linkdir-linkdir6.yml",
       "session_name": "linkdir6",
       "session_secret": "TELEGRAM_SESSION_B64_LINKDIR6",
