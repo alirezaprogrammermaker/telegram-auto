@@ -10,15 +10,6 @@
       "profile": "config/accounts/elmira.json"
     },
     {
-      "id": "promo1",
-      "label": "Promo worker 1 — promo_spread only",
-      "enabled": false,
-      "workflow": "run-account-promo1.yml",
-      "session_name": "promo1",
-      "session_secret": "TELEGRAM_SESSION_B64_PROMO1",
-      "profile": "config/accounts/promo1.json"
-    },
-    {
       "id": "test",
       "label": "test (full)",
       "enabled": false,
