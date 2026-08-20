@@ -1,9 +1,12 @@
-# One-time / periodic seed of linkdir search jobs into D1 queue.
+# Periodic seed of linkdir search jobs into D1 queue.
 # Requires ADMIN_BOT_BRIDGE_URL + ADMIN_BOT_BRIDGE_TOKEN repo secrets.
 
 name: seed-linkdir-jobs
 
 on:
+  schedule:
+    # Daily, ahead of the 06:00 UTC collector wave so fresh jobs are claimable.
+    - cron: "40 5 * * *"
   workflow_dispatch:
     inputs:
       expand_templates:
@@ -30,10 +33,21 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: seed-linkdir-jobs
+  cancel-in-progress: false
+
 jobs:
   seed:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
+    # Scheduled runs carry no inputs, so every knob needs an explicit default
+    # here — otherwise an empty `use_ai` would silently seed with --no-ai.
+    env:
+      QUERY_SET: ${{ inputs.query_set || 'all' }}
+      EXPAND_TEMPLATES: ${{ github.event_name == 'schedule' && 'true' || inputs.expand_templates }}
+      USE_AI: ${{ github.event_name == 'schedule' && 'true' || inputs.use_ai }}
+      AI_COUNT: ${{ inputs.ai_count || '' }}
     steps:
       - name: Checkout repo
         run: |
@@ -57,15 +71,16 @@ jobs:
         run: |
           set -euo pipefail
           args=""
-          if [ "${{ inputs.expand_templates }}" = "true" ]; then
+          if [ "$EXPAND_TEMPLATES" = "true" ]; then
             args="$args --expand-templates"
           fi
-          if [ "${{ inputs.use_ai }}" = "true" ]; then
+          if [ "$USE_AI" = "true" ]; then
             args="$args --ai"
           else
             args="$args --no-ai"
           fi
-          if [ -n "${{ inputs.ai_count }}" ]; then
-            args="$args --ai-count ${{ inputs.ai_count }}"
+          if [ -n "$AI_COUNT" ]; then
+            args="$args --ai-count $AI_COUNT"
           fi
-          python3 scripts/seed_linkdir_jobs.py --query-set "${{ inputs.query_set }}" $args
+          echo "seeding query_set=$QUERY_SET ai=$USE_AI"
+          python3 scripts/seed_linkdir_jobs.py --query-set "$QUERY_SET" $args
