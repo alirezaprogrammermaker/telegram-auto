@@ -1,0 +1,30 @@
+{
+  "id": "promo2",
+  "label": "promo2 (promo)",
+  "session_name": "promo2",
+  "modules": {
+    "auto_reply": {
+      "enabled": true
+    },
+    "channel_forward": {
+      "enabled": false
+    },
+    "digest": {
+      "enabled": false
+    },
+    "promo_spread": {
+      "enabled": true,
+      "dry_run": true,
+      "paused": false,
+      "mode": "forward",
+      "auto_join": false,
+      "routes": []
+    },
+    "link_harvest": {
+      "enabled": false
+    },
+    "group_inspect": {
+      "enabled": false
+    }
+  }
+}
