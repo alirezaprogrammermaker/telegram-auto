@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from telethon.errors import (  # noqa: E402
+    FloodWaitError,
     PhoneCodeExpiredError,
     PhoneCodeInvalidError,
     SessionPasswordNeededError,
@@ -96,6 +97,22 @@ async def cmd_send(phone: str) -> dict:
             "session": config.session_name,
             "pending": str(_pending_path().name),
             "hint": "Set secret LOGIN_OTP (and LOGIN_2FA if needed), then run action=complete",
+        }
+    except FloodWaitError as exc:
+        wait = int(getattr(exc, "seconds", 0) or 0)
+        hours, rem = divmod(wait, 3600)
+        minutes = rem // 60
+        wait_label = f"{hours}h {minutes}m" if hours else f"{minutes}m"
+        print(
+            f"::error::Telegram FloodWait {wait}s (~{wait_label}). "
+            "Do not retry send until that wait ends; extra attempts extend the lockout.",
+            file=sys.stderr,
+        )
+        return {
+            "status": "failed",
+            "error": f"flood_wait:{wait}",
+            "wait_seconds": wait,
+            "hint": f"Wait ~{wait_label} before requesting another code for this number",
         }
     finally:
         await tg.disconnect()
