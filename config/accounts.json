@@ -102,7 +102,7 @@
     {
       "id": "linkdir5",
       "label": "linkdir5 (linkdir)",
-      "enabled": false,
+      "enabled": true,
       "workflow": "run-linkdir-linkdir5.yml",
       "session_name": "linkdir5",
       "session_secret": "TELEGRAM_SESSION_B64_LINKDIR5",
