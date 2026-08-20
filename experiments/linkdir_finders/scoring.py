@@ -70,6 +70,13 @@ NEGATIVE_TOKENS = (
     "ربات ضد",
     "anti link",
     "antilink",
+    "canva",
+    "کتاب",
+    "book club",
+    "دوست یابی",
+    "دوستیابی",
+    "dating",
+    "pavel durov",
 )
 
 _LINK_RE = re.compile(
@@ -369,13 +376,26 @@ def rank_candidate(
 
     rank = _clamp(rank)
 
+    link_ratio = 0.0
+    sample_n = int(act.get("messages_with_text") or act.get("sample_size") or 0)
+    link_msgs = int(act.get("link_messages") or 0)
+    if sample_n > 0:
+        link_ratio = link_msgs / max(1, sample_n)
+
     if (
         promo_eligible
         and rank >= 70
         and qual["score"] >= 50
         and ident["score"] >= 40
+        and (link_ratio >= 0.25 or ident["score"] >= 60 or act.get("readable") is not True)
     ):
-        verdict = "keep"
+        # Require link density when we actually sampled messages; allow strong
+        # identity titles through when activity sampling was skipped/failed.
+        if act.get("readable") is True and link_ratio < 0.25 and ident["score"] < 60:
+            verdict = "review"
+            gates.append("gate:keep_needs_link_density")
+        else:
+            verdict = "keep"
     elif rank >= 50 and ident["score"] >= 35:
         verdict = "review"
     else:

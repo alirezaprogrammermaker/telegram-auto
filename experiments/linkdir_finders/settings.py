@@ -37,12 +37,20 @@ _DEFAULTS: dict[str, Any] = {
         "delay_hop_min": 10.0,
         "delay_hop_max": 20.0,
     },
-    "search": {"limit": 15, "delay": 2.0, "enrich": 12, "sample": 25, "jobs_per_run": 5},
+    "search": {
+        "limit": 15,
+        "delay": 2.0,
+        "enrich": 20,
+        "enrich_min_identity": 35,
+        "sample": 25,
+        "jobs_per_run": 5,
+        "query_set": "",
+    },
     "job_queue": {
         "enabled": True,
         "search_redo_days": 14,
         "seed_niches": ["گپ", "کانال", "گروه"],
-        "seed_suffixes": ["لینک", "لینکدونی", "تبادل لینک", "عضویت"],
+        "seed_suffixes": ["لینک", "لینکدونی", "تبادل لینک"],
     },
     "snowball": {
         "hops": 1,
@@ -54,6 +62,7 @@ _DEFAULTS: dict[str, Any] = {
         "enrich_sample": 15,
         "min_seed_rank": 65,
         "min_next_hop_identity": 58,
+        "min_upsert_identity": 45,
         "prefer_seed_only": True,
     },
     "blocklist": {
@@ -69,7 +78,12 @@ _DEFAULTS: dict[str, Any] = {
         "include_stale": True,
         "stale_limit": 8,
     },
-    "catalog": {"stale_hours": 72, "promo_limit": 200},
+    "catalog": {
+        "stale_hours": 72,
+        "promo_limit": 200,
+        "skip_junk_upsert": True,
+        "junk_rank_floor": 40,
+    },
     "pipeline": {
         "steps": ["search", "snowball", "rerank"],
         "connect_retries": 8,

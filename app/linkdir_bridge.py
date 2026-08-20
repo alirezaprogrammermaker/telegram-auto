@@ -87,6 +87,7 @@ def claim_jobs(
     limit: int = 5,
     lease_seconds: int = 900,
     job_type: str | None = None,
+    query_set: str | None = None,
 ) -> list[dict[str, Any]] | None:
     resp = bridge_request(
         "POST",
@@ -96,6 +97,7 @@ def claim_jobs(
             "limit": limit,
             "lease_seconds": lease_seconds,
             "job_type": job_type,
+            "query_set": query_set,
         },
     )
     if not resp or not resp.get("ok"):

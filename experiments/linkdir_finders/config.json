@@ -2,21 +2,49 @@
   "session_name": "easy_seen",
   "sessions": ["easy_seen"],
   "queries": [
+    "تبادل لینک",
     "لینکدونی",
     "لینک دونی",
-    "تبادل لینک",
     "لینک رایگان",
-    "گروه لینک",
     "تبلیغ رایگان",
-    "کانال لینک",
-    "گروه یاب",
-    "کانال یاب",
-    "گپ دونی",
-    "عضویت رایگان",
+    "گپ لینکدونی",
+    "گروه تبادل لینک",
+    "کانال تبادل لینک",
+    "لینکدونی گپ",
     "link exchange",
-    "free ads telegram",
     "links directory",
-    "invite links"
+    "telegram link dump",
+    "link sharing group",
+    "promo group links"
+  ],
+  "queries_fa": [
+    "تبادل لینک",
+    "لینکدونی",
+    "لینک دونی",
+    "لینک رایگان",
+    "تبلیغ رایگان",
+    "گپ لینکدونی",
+    "گروه تبادل لینک",
+    "کانال تبادل لینک",
+    "لینکدونی گپ",
+    "پخش لینک"
+  ],
+  "queries_en": [
+    "link exchange",
+    "links directory",
+    "telegram link dump",
+    "link sharing group",
+    "promo group links",
+    "add your link telegram",
+    "free link exchange"
+  ],
+  "queries_niche": [
+    "لینکدونی ایرانی",
+    "تبادل لینک گروه",
+    "ثبت لینک",
+    "دیوار لینک",
+    "فهرست لینک",
+    "گپ تبلیغات آزاد"
   ],
   "safety": {
     "allow_joins": false,
@@ -41,7 +69,8 @@
   "search": {
     "limit": 15,
     "delay": 2.0,
-    "enrich": 12,
+    "enrich": 20,
+    "enrich_min_identity": 35,
     "sample": 25,
     "jobs_per_run": 5
   },
@@ -49,7 +78,7 @@
     "enabled": true,
     "search_redo_days": 14,
     "seed_niches": ["گپ", "کانال", "گروه"],
-    "seed_suffixes": ["لینک", "لینکدونی", "تبادل لینک", "عضویت"]
+    "seed_suffixes": ["لینک", "لینکدونی", "تبادل لینک"]
   },
   "snowball": {
     "hops": 1,
@@ -61,12 +90,19 @@
     "enrich_sample": 15,
     "min_seed_rank": 65,
     "min_next_hop_identity": 58,
+    "min_upsert_identity": 45,
     "prefer_seed_only": true
   },
   "blocklist": {
     "use_defaults": true,
     "usernames": [],
     "skip_junk_catalog": true
+  },
+  "catalog": {
+    "stale_hours": 72,
+    "promo_limit": 200,
+    "skip_junk_upsert": true,
+    "junk_rank_floor": 40
   },
   "rerank": {
     "limit": 25,
@@ -75,10 +111,6 @@
     "include_review": true,
     "include_stale": true,
     "stale_limit": 8
-  },
-  "catalog": {
-    "stale_hours": 72,
-    "promo_limit": 200
   },
   "pipeline": {
     "steps": ["search", "snowball", "rerank"],

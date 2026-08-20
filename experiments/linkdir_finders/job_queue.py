@@ -29,6 +29,7 @@ def claim_search_jobs(
     *,
     limit: int = 5,
     lease_seconds: int = 900,
+    query_set: str | None = None,
 ) -> list[dict[str, Any]]:
     if not owner.strip():
         return []
@@ -40,6 +41,7 @@ def claim_search_jobs(
             limit=max(1, min(20, int(limit))),
             lease_seconds=max(60, int(lease_seconds)),
             job_type=SEARCH_JOB_TYPE,
+            query_set=(query_set or "").strip() or None,
         )
         return jobs or []
     except Exception as exc:  # noqa: BLE001
@@ -73,23 +75,32 @@ def enqueue_search_job(
     priority: int = 100,
     redo_after_days: int = 14,
     source: str = "seed",
+    query_set: str | None = None,
+    collector_role: str | None = None,
 ) -> dict[str, Any] | None:
     query = (query or "").strip()
     if not query:
         return None
+    shard = (query_set or "").strip().lower() or None
     try:
         from app.linkdir_bridge import enqueue_job
 
+        payload: dict[str, Any] = {
+            "query": query,
+            "query_key": query_key(query),
+            "source": source,
+        }
+        if shard:
+            payload["query_set"] = shard
+            payload["collector_role"] = collector_role or f"search_{shard}"
+        elif collector_role:
+            payload["collector_role"] = collector_role
         return enqueue_job(
             {
                 "job_type": SEARCH_JOB_TYPE,
                 "priority": int(priority),
                 "redo_after_days": int(redo_after_days),
-                "payload": {
-                    "query": query,
-                    "query_key": query_key(query),
-                    "source": source,
-                },
+                "payload": payload,
             }
         )
     except Exception as exc:  # noqa: BLE001
@@ -149,3 +160,13 @@ def expand_seed_queries(
         for suffix in suffixes:
             add(f"{niche} {suffix}")
     return out
+
+
+def queries_for_set(cfg: dict[str, Any], query_set: str | None) -> list[str]:
+    """Return config queries for fa/en/niche, else the mixed default list."""
+    shard = (query_set or "").strip().lower()
+    if shard in {"fa", "en", "niche"}:
+        rows = list(cfg.get(f"queries_{shard}") or [])
+        if rows:
+            return [str(q).strip() for q in rows if str(q).strip()]
+    return [str(q).strip() for q in (cfg.get("queries") or []) if str(q).strip()]

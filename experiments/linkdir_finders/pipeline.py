@@ -17,6 +17,7 @@ import json
 import logging
 import os
 import time
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
@@ -266,6 +267,32 @@ def build_parser() -> argparse.ArgumentParser:
     return p
 
 
+def overlay_account_profile(cfg: dict[str, Any], account_id: str | None) -> dict[str, Any]:
+    """Apply per-account query_set / role from config/accounts/<id>.json."""
+    aid = (account_id or "").strip()
+    if not aid:
+        return cfg
+    try:
+        from app.accounts import load_account_profile
+    except Exception:
+        return cfg
+    profile = load_account_profile(aid)
+    if not profile:
+        return cfg
+    mod = ((profile.get("modules") or {}).get("linkdir_collect") or {})
+    query_set = str(mod.get("query_set") or "").strip().lower()
+    if not query_set:
+        return cfg
+    out = deepcopy(cfg)
+    out.setdefault("search", {})["query_set"] = query_set
+    from experiments.linkdir_finders.job_queue import queries_for_set
+
+    queries = queries_for_set(out, query_set)
+    if queries:
+        out["queries"] = queries
+    return out
+
+
 def _parse_steps(raw: str | None, cfg: dict[str, Any]) -> list[str]:
     if raw:
         steps = [s.strip() for s in raw.split(",") if s.strip()]
@@ -285,8 +312,9 @@ def main() -> None:
     args = build_parser().parse_args()
     setup_logging(verbose=args.verbose)
     cfg = load_config()
-    steps = _parse_steps(args.steps, cfg)
     account_id = args.account_id or os.environ.get("ACCOUNT_ID")
+    cfg = overlay_account_profile(cfg, account_id)
+    steps = _parse_steps(args.steps, cfg)
 
     if args.cmd == "once":
         summary = asyncio.run(

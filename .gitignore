@@ -21,7 +21,10 @@ experiments/linkdir_finders/results/
 cf-admin-bot/
 docs/
 CAPABILITIES.md
-tests/
+tests/*
+!tests/test_cloudflare_ai*.py
+!tests/test_linkdir*.py
+!tests/__init__.py
 .playwright-mcp/
 .wrangler/
 another.txt

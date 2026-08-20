@@ -29,7 +29,12 @@ from telethon.tl.types import ChatInvite, ChatInviteAlready, ChatInvitePeek
 
 from modules.channel_forward.refs import invite_hash
 from modules.group_pool.pool import extract_links_from_text, normalize_group_ref
-from experiments.linkdir_finders.blocklist import blocklist_from_config, is_blocked, normalize_username
+from experiments.linkdir_finders.blocklist import (
+    blocklist_from_config,
+    is_blocked,
+    normalize_username,
+    prefilter_ref,
+)
 from experiments.linkdir_finders.catalog import LinkDirCatalog
 from experiments.linkdir_finders.enrich import resolve_and_profile
 from experiments.linkdir_finders.safety_guard import SafetyGuard
@@ -205,6 +210,7 @@ async def run_snowball(
     max_invite_peek = int(sb.get("max_invite_peek_per_run") or 12)
     enrich_sample = int(sb.get("enrich_sample") or 20)
     prefer_seed_only = bool(sb.get("prefer_seed_only", True))
+    min_upsert_identity = float(sb.get("min_upsert_identity") or 45)
 
     stats: dict[str, Any] = {
         "method": "snowball_deep",
@@ -220,6 +226,7 @@ async def run_snowball(
         "review": 0,
         "junk": 0,
         "blocked_skipped": 0,
+        "upsert_skipped": 0,
         "errors": 0,
         "stopped_reason": None,
         "safety": guard.snapshot(),
@@ -262,6 +269,29 @@ async def run_snowball(
 
     known = catalog.known_refs()
     exclude = set(known)
+
+    def _persist_candidate(row: dict[str, Any], *, method: str) -> bool:
+        identity = float(row.get("identity_score") or 0)
+        verdict = str(row.get("verdict") or "junk")
+        if verdict == "junk" and identity < min_upsert_identity:
+            stats["upsert_skipped"] += 1
+            return False
+        try:
+            key_ref = str(row.get("ref") or "").lower()
+            before = key_ref in known
+            result = catalog.upsert_from_search(row, method=method, save=False)
+            if result.get("skipped"):
+                stats["upsert_skipped"] += 1
+                return False
+            if not before and key_ref:
+                stats["new_upserts"] += 1
+                known.add(key_ref)
+            if verdict in stats:
+                stats[verdict] += 1
+            return True
+        except ValueError:
+            stats["errors"] += 1
+            return False
     for u in blocked_usernames:
         exclude.add(f"@{u}")
     if skip_junk:
@@ -352,6 +382,9 @@ async def run_snowball(
                 stats["links_found"] += len(links)
                 users, invites = _split_links(links, exclude=exclude)
                 for ref in users:
+                    if not prefilter_ref(ref, cfg=config):
+                        stats["blocked_skipped"] += 1
+                        continue
                     username_candidates.append((ref, seed_ref))
                     exclude.add(ref.lower())
                 for inv in invites:
@@ -434,35 +467,30 @@ async def run_snowball(
                 row["parent_seed"] = parent
                 row["snowball_hop"] = hop
                 stats["resolved"] += 1
-                try:
-                    before = ref.lower() in known
-                    catalog.upsert_from_search(row, method="snowball_deep", save=False)
-                    if not before:
-                        stats["new_upserts"] += 1
-                        known.add(ref.lower())
-                    v = row.get("verdict")
-                    if v in stats:
-                        stats[v] += 1
-                    # Feed next hop with promising seeds (keep/review with username)
-                    if (
-                        hop < hops
-                        and row.get("username")
-                        and v in {"keep", "review"}
-                        and float(row.get("identity_score") or 0) >= min_next_identity
-                        and not is_blocked(str(row.get("ref") or row.get("username")), cfg=config)
-                    ):
-                        next_seeds.append(row)
-                    logger.info(
-                        "  @ %s kind=%s post=%s v=%s rank=%s parent=%s",
-                        row.get("ref"),
-                        row.get("kind"),
-                        row.get("members_can_send"),
-                        row.get("verdict"),
-                        row.get("rank_score"),
-                        parent,
-                    )
-                except ValueError:
-                    stats["errors"] += 1
+                before_keep = stats["new_upserts"]
+                if not _persist_candidate(row, method="snowball_deep"):
+                    await guard.sleep("resolve")
+                    continue
+                v = row.get("verdict")
+                # Feed next hop with promising seeds (keep/review with username)
+                if (
+                    hop < hops
+                    and row.get("username")
+                    and v in {"keep", "review"}
+                    and float(row.get("identity_score") or 0) >= min_next_identity
+                    and not is_blocked(str(row.get("ref") or row.get("username")), cfg=config)
+                ):
+                    next_seeds.append(row)
+                logger.info(
+                    "  @ %s kind=%s post=%s v=%s rank=%s parent=%s new=%s",
+                    row.get("ref"),
+                    row.get("kind"),
+                    row.get("members_can_send"),
+                    row.get("verdict"),
+                    row.get("rank_score"),
+                    parent,
+                    stats["new_upserts"] > before_keep,
+                )
                 await guard.sleep("resolve")
 
             # Peek invites ONLY (never join unless explicitly enabled — still default off)
@@ -537,26 +565,15 @@ async def run_snowball(
                 if row:
                     row["snowball_hop"] = hop
                     row["parent_seed"] = parent
-                    try:
-                        key_ref = str(row.get("ref") or "").lower()
-                        before = key_ref in known
-                        catalog.upsert_from_search(row, method="snowball_invite_peek", save=False)
-                        if not before:
-                            stats["new_upserts"] += 1
-                            known.add(key_ref)
-                        v = row.get("verdict")
-                        if v in stats:
-                            stats[v] += 1
-                        logger.info(
-                            "  + peek %s kind=%s v=%s rank=%s title=%s",
-                            row.get("ref"),
-                            row.get("kind"),
-                            row.get("verdict"),
-                            row.get("rank_score"),
-                            row.get("title"),
-                        )
-                    except ValueError:
-                        stats["errors"] += 1
+                    _persist_candidate(row, method="snowball_invite_peek")
+                    logger.info(
+                        "  + peek %s kind=%s v=%s rank=%s title=%s",
+                        row.get("ref"),
+                        row.get("kind"),
+                        row.get("verdict"),
+                        row.get("rank_score"),
+                        row.get("title"),
+                    )
 
                 await guard.sleep("invite_peek")
 

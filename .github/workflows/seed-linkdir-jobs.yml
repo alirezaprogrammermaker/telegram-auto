@@ -7,10 +7,15 @@ on:
   workflow_dispatch:
     inputs:
       expand_templates:
-        description: "Also enqueue niche×suffix template queries"
+        description: "Also enqueue niche×suffix template queries (fa shard)"
         required: false
         type: boolean
         default: true
+      query_set:
+        description: "fa, en, niche, or all"
+        required: false
+        type: string
+        default: "all"
 
 permissions:
   contents: read
@@ -45,4 +50,4 @@ jobs:
           if [ "${{ inputs.expand_templates }}" = "true" ]; then
             args="--expand-templates"
           fi
-          python3 scripts/seed_linkdir_jobs.py $args
+          python3 scripts/seed_linkdir_jobs.py --query-set "${{ inputs.query_set }}" $args

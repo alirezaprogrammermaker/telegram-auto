@@ -49,6 +49,18 @@ def normalize_ref(username: str | None, chat_id: Any = None) -> str | None:
     return None
 
 
+def should_persist_row(row: dict[str, Any]) -> bool:
+    """Return False for low-signal junk that should not pollute the catalog."""
+    verdict = str(row.get("verdict") or "junk")
+    if verdict in {"keep", "review"}:
+        return True
+    rank = float(row.get("rank_score") or row.get("score") or 0)
+    identity = float(row.get("identity_score") or 0)
+    has_username = bool(str(row.get("username") or "").strip())
+    # Persist borderline junk only when it is identifiable enough to skip later.
+    return rank >= 40 and identity >= 35 and has_username
+
+
 class LinkDirCatalog:
     """Thread-safe ranked directory catalog (local JSON cache + optional D1)."""
 
@@ -135,7 +147,11 @@ class LinkDirCatalog:
     def upsert_from_search(
         self, row: dict[str, Any], *, method: str, save: bool = True
     ) -> dict[str, Any]:
-        """Merge one search/rank row into the catalog."""
+        """Merge one search/rank row into the catalog.
+
+        Low-signal junk is skipped so the shared catalog stays usable.
+        Returns ``{"skipped": True, ...}`` when the row is not persisted.
+        """
         ref = normalize_ref(row.get("username"), row.get("id")) or row.get("ref")
         if not ref:
             raise ValueError("row has no ref")
@@ -144,6 +160,16 @@ class LinkDirCatalog:
         verdict = str(row.get("verdict") or "junk")
         if verdict not in VERDICTS:
             verdict = "junk"
+
+        if not should_persist_row(row):
+            return {
+                "skipped": True,
+                "reason": "junk_low_signal",
+                "ref": ref,
+                "verdict": verdict,
+                "rank_score": row.get("rank_score") or row.get("score"),
+                "identity_score": row.get("identity_score"),
+            }
 
         with self._lock:
             items = self._data.setdefault("items", {})

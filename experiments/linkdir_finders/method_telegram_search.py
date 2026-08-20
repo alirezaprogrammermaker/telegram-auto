@@ -20,6 +20,7 @@ from experiments.linkdir_finders.job_queue import (
     bridge_ready,
     claim_search_jobs,
     complete_job,
+    queries_for_set,
 )
 from experiments.linkdir_finders.settings import load_config
 from experiments.linkdir_finders.tg import (
@@ -86,15 +87,21 @@ async def run_search(
     limit = int(sc.get("limit") or 20)
     delay = float(sc.get("delay") or 1.2)
     enrich_n = int(sc.get("enrich") or 20)
+    enrich_min_identity = float(sc.get("enrich_min_identity") or 35)
     sample = int(sc.get("sample") or 35)
     jobs_per_run = int(sc.get("jobs_per_run") or jq.get("jobs_per_run") or 5)
+    query_set = str(sc.get("query_set") or "").strip().lower() or None
 
     use_job_queue = bool(jq.get("enabled", True)) and bool(collector_id) and bridge_ready()
     job_entries: list[tuple[int | None, str]] = []
     queue_meta: dict[str, Any] = {"mode": "config", "claimed": 0}
 
     if use_job_queue:
-        claimed = claim_search_jobs(collector_id or "", limit=jobs_per_run)
+        claimed = claim_search_jobs(
+            collector_id or "",
+            limit=jobs_per_run,
+            query_set=query_set,
+        )
         for job in claimed:
             payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
             query = str(payload.get("query") or "").strip()
@@ -105,6 +112,7 @@ async def run_search(
             "mode": "d1_queue",
             "claimed": len(job_entries),
             "owner": collector_id,
+            "query_set": query_set,
         }
         if not job_entries:
             logger.info("no pending search jobs for collector=%s", collector_id)
@@ -123,7 +131,7 @@ async def run_search(
             }
         queries = [q for _, q in job_entries]
     else:
-        queries = list(config.get("queries") or [])
+        queries = queries_for_set(config, query_set)
         job_entries = [(None, q) for q in queries]
         if collector_id and not bridge_ready():
             queue_meta["fallback"] = "bridge_unavailable"
@@ -183,8 +191,18 @@ async def run_search(
                 ),
                 reverse=True,
             )
-            targets = filter_blocked_rows(ranked[:enrich_n], cfg=config)
-            logger.info("enriching top %s …", len(targets))
+            candidates = [
+                r
+                for r in ranked
+                if float(r.get("identity_score") or 0) >= enrich_min_identity
+            ]
+            targets = filter_blocked_rows(candidates[:enrich_n], cfg=config)
+            logger.info(
+                "enriching %s (identity>=%s, cap=%s)",
+                len(targets),
+                enrich_min_identity,
+                enrich_n,
+            )
             for idx, row in enumerate(targets, 1):
                 try:
                     if row.get("username"):
@@ -249,12 +267,18 @@ async def run_search(
     if write_catalog:
         catalog = LinkDirCatalog(collector_id=collector_id)
         upserted = 0
+        skipped = 0
         for row in all_rows:
             try:
-                catalog.upsert_from_search(row, method="telegram_contacts_search", save=False)
-                upserted += 1
+                result = catalog.upsert_from_search(
+                    row, method="telegram_contacts_search", save=False
+                )
+                if result.get("skipped"):
+                    skipped += 1
+                else:
+                    upserted += 1
             except ValueError:
-                continue
+                skipped += 1
         catalog.save()
         stale_n = catalog.mark_stale(
             older_than_hours=float(cat_cfg.get("stale_hours") or 72)
@@ -264,6 +288,7 @@ async def run_search(
         )
         catalog_info = {
             "upserted": upserted,
+            "skipped": skipped,
             "stale_marked": stale_n,
             "promo_export": str(export_path),
             "catalog_counts": catalog.counts(),

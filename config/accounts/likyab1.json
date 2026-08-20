@@ -24,7 +24,8 @@
     "linkdir_collect": {
       "enabled": true,
       "paused": false,
-      "steps": "search,snowball,rerank"
+      "steps": "search",
+      "query_set": "fa"
     }
   }
 }

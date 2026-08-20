@@ -21,12 +21,24 @@ _DEFAULT_USERNAMES: frozenset[str] = frozenset(
         "contest",
         "telegrambot",
         "tginfo",
+        "gif",
+        "wiki",
+        "vodka",
         # Smoke / CI test refs
         "linkdir_py_smoke",
         "linkdir_smoke",
         "py_smoke",
         "catalog_smoke",
     }
+)
+
+# Soft title/username hints — skip before resolve when matching.
+_SOFT_BLOCK_RE = re.compile(
+    r"(?i)\b("
+    r"canva|photoshop|netflix|spotify|chatgpt|"
+    r"کتاب|book\s*club|دوست[ی]?ابی|dating|"
+    r"official\s*news|pavel\s*durov"
+    r")\b"
 )
 
 _USERNAME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{3,}$")
@@ -63,6 +75,11 @@ def is_blocked(ref: str | None, *, cfg: dict[str, Any] | None = None) -> bool:
     return u in blocklist_from_config(cfg)
 
 
+def looks_like_blocked_text(*parts: str | None) -> bool:
+    blob = " ".join(str(p or "") for p in parts)
+    return bool(blob and _SOFT_BLOCK_RE.search(blob))
+
+
 def filter_blocked_rows(
     rows: list[dict[str, Any]],
     *,
@@ -74,5 +91,21 @@ def filter_blocked_rows(
         uname = normalize_username(str(row.get("username") or row.get("ref") or ""))
         if uname and uname in blocked:
             continue
+        if looks_like_blocked_text(row.get("title"), row.get("username"), row.get("about")):
+            continue
         out.append(row)
     return out
+
+
+def prefilter_ref(
+    ref: str,
+    *,
+    cfg: dict[str, Any] | None = None,
+    title: str | None = None,
+) -> bool:
+    """Return True if this ref is worth resolving (not blocked / soft-blocked)."""
+    if is_blocked(ref, cfg=cfg):
+        return False
+    if looks_like_blocked_text(ref, title):
+        return False
+    return True
