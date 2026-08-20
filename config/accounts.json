@@ -84,7 +84,7 @@
     {
       "id": "linkdir3",
       "label": "linkdir3 (linkdir)",
-      "enabled": false,
+      "enabled": true,
       "workflow": "run-linkdir-linkdir3.yml",
       "session_name": "linkdir3",
       "session_secret": "TELEGRAM_SESSION_B64_LINKDIR3",
