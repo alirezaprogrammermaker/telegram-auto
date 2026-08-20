@@ -332,7 +332,17 @@ class LinkDirCatalog:
                 )
                 age = (r.get("activity") or {}).get("last_message_age_hours")
                 fresh = isinstance(age, (int, float)) and age < 72
+                # Active postable keeps are the firehose: members post fresh
+                # @usernames + links constantly, unlike locked review giants.
+                postable = bool(r.get("members_can_send") or r.get("postable"))
+                is_keep = str(r.get("status") or r.get("verdict") or "") in {
+                    "active",
+                    "keep",
+                }
+                firehose = postable and (is_keep or bool(r.get("promo_ready")))
                 return (
+                    1 if firehose and fresh else 0,
+                    1 if firehose else 0,
                     1 if r.get("seed_only") and persianish else 0,
                     1 if persianish else 0,
                     1 if fresh else 0,
