@@ -126,6 +126,10 @@ class PromoQueue:
             self._save()
         return n
 
+    def try_claim_post_seen(self, post_key: str) -> bool:
+        """Return True once when a post is first noticed (seen reaction)."""
+        return self._try_claim_marker(post_key, bucket="seen_posts")
+
     def try_claim_post_ack(self, post_key: str) -> bool:
         """Return True once when a post has no pending jobs left (first claim wins)."""
         key = str(post_key or "").strip()
@@ -139,16 +143,26 @@ class PromoQueue:
                 return False
             if any(str(i.get("status") or "") == "pending" for i in related):
                 return False
-            acked = self._data.setdefault("acked_posts", {})
-            if not isinstance(acked, dict):
-                acked = {}
-                self._data["acked_posts"] = acked
-            if key in acked:
-                return False
-            acked[key] = datetime.now(timezone.utc).isoformat()
-            # Bound growth of ack map
-            if len(acked) > 300:
-                keep = sorted(acked.items(), key=lambda kv: str(kv[1]))[-200:]
-                self._data["acked_posts"] = dict(keep)
-            self._save()
-            return True
+            return self._claim_marker_unlocked(key, bucket="acked_posts")
+
+    def _try_claim_marker(self, post_key: str, *, bucket: str) -> bool:
+        key = str(post_key or "").strip()
+        if not key:
+            return False
+        with _lock:
+            self._data = load_json(self.path, {"items": []})
+            return self._claim_marker_unlocked(key, bucket=bucket)
+
+    def _claim_marker_unlocked(self, key: str, *, bucket: str) -> bool:
+        markers = self._data.setdefault(bucket, {})
+        if not isinstance(markers, dict):
+            markers = {}
+            self._data[bucket] = markers
+        if key in markers:
+            return False
+        markers[key] = datetime.now(timezone.utc).isoformat()
+        if len(markers) > 300:
+            keep = sorted(markers.items(), key=lambda kv: str(kv[1]))[-200:]
+            self._data[bucket] = dict(keep)
+        self._save()
+        return True

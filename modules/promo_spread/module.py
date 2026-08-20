@@ -31,6 +31,7 @@ from modules.promo_spread.targets import ensure_promo_group, ensure_source_chann
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SEEN_REACTION = "🕊"
 DEFAULT_ACK_REACTION = "👍"
 
 
@@ -61,6 +62,11 @@ class PromoSpreadModule(BaseModule):
         self.safety_cfg = SafetyConfig.from_dict(config.get("safety"))
         self.guard = SafetyGuard(self.safety_cfg)
         self.queue = PromoQueue()
+        raw_seen = config.get("seen_reaction", DEFAULT_SEEN_REACTION)
+        if raw_seen is False or raw_seen is None:
+            self.seen_reaction = ""
+        else:
+            self.seen_reaction = str(raw_seen).strip() or DEFAULT_SEEN_REACTION
         raw_ack = config.get("ack_reaction", DEFAULT_ACK_REACTION)
         if raw_ack is False or raw_ack is None:
             self.ack_reaction = ""
@@ -265,6 +271,23 @@ class PromoSpreadModule(BaseModule):
             route.source_ref,
             created,
         )
+        if created > 0:
+            await self._react_seen(route, ids, post_key)
+
+    async def _react_seen(
+        self, route: ResolvedPromoRoute, message_ids: list[int], post_key: str
+    ) -> None:
+        if not self.seen_reaction:
+            return
+        if not self.queue.try_claim_post_seen(post_key):
+            return
+        await self._react_on_source(
+            source_entity=route.source_entity,
+            message_ids=message_ids,
+            emoticons=[self.seen_reaction],
+            post_key=post_key,
+            kind="seen",
+        )
 
     async def _worker_loop(self) -> None:
         await asyncio.sleep(random.uniform(8, 25))
@@ -439,31 +462,92 @@ class PromoSpreadModule(BaseModule):
         if not self.queue.try_claim_post_ack(post_key):
             return
         source_id = int(item.get("source_id") or 0)
-        message_ids = [int(x) for x in (item.get("message_ids") or []) if str(x).lstrip("-").isdigit()]
+        message_ids = [
+            int(x)
+            for x in (item.get("message_ids") or [])
+            if str(x).lstrip("-").isdigit()
+        ]
         if not source_id or not message_ids:
             return
         source_entity = self._source_entity_for(source_id)
         if source_entity is None:
             logger.warning("promo ack skipped: source gone for %s", post_key)
             return
-        msg_id = min(message_ids)
+        # Keep dove if we marked seen, then thumbs for "finished".
+        emoticons = []
+        if self.seen_reaction:
+            emoticons.append(self.seen_reaction)
+        emoticons.append(self.ack_reaction)
+        await self._react_on_source(
+            source_entity=source_entity,
+            message_ids=message_ids,
+            emoticons=emoticons,
+            post_key=post_key,
+            kind="ack",
+        )
+
+    async def _react_on_source(
+        self,
+        *,
+        source_entity: Any,
+        message_ids: list[int],
+        emoticons: list[str],
+        post_key: str,
+        kind: str,
+    ) -> None:
+        clean = [e for e in emoticons if e]
+        if not clean or not message_ids:
+            return
+        msg_id = min(int(x) for x in message_ids)
         try:
             await self.client(
                 SendReactionRequest(
                     peer=source_entity,
                     msg_id=msg_id,
-                    reaction=[tl_types.ReactionEmoji(emoticon=self.ack_reaction)],
+                    reaction=[
+                        tl_types.ReactionEmoji(emoticon=e) for e in clean
+                    ],
                 )
             )
             logger.info(
-                "promo ack reaction %s on source msg %s (%s)",
-                self.ack_reaction,
+                "promo %s reaction %s on source msg %s (%s)",
+                kind,
+                "".join(clean),
                 msg_id,
                 post_key,
             )
         except Exception as exc:
+            # Channels that disallow multi-react: retry with the last emoji only.
+            if len(clean) > 1:
+                try:
+                    await self.client(
+                        SendReactionRequest(
+                            peer=source_entity,
+                            msg_id=msg_id,
+                            reaction=[
+                                tl_types.ReactionEmoji(emoticon=clean[-1])
+                            ],
+                        )
+                    )
+                    logger.info(
+                        "promo %s reaction fallback %s on source msg %s (%s)",
+                        kind,
+                        clean[-1],
+                        msg_id,
+                        post_key,
+                    )
+                    return
+                except Exception as exc2:
+                    logger.warning(
+                        "promo %s reaction failed for %s: %s",
+                        kind,
+                        post_key,
+                        exc2.__class__.__name__,
+                    )
+                    return
             logger.warning(
-                "promo ack reaction failed for %s: %s",
+                "promo %s reaction failed for %s: %s",
+                kind,
                 post_key,
                 exc.__class__.__name__,
             )
