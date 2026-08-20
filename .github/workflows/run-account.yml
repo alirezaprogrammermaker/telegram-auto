@@ -111,7 +111,12 @@ jobs:
           FLOOD_SLEEP_THRESHOLD: "120"
           ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
           ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
-        run: python3 main.py
+        run: |
+          set -euo pipefail
+          echo -n "egress_ip="
+          curl -sS --max-time 15 https://api.ipify.org || echo "unknown"
+          echo
+          python3 main.py
 
       - name: Skipped (no session secret)
         if: steps.prep.outputs.skip == 'true'

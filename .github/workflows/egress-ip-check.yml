@@ -1,0 +1,39 @@
+# Print public egress IP for GitHub-hosted runners (what Telegram would see).
+# Each account label is a separate job; IPs are dynamic per run.
+
+name: egress-ip-check
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ip:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        account:
+          - promo2
+          - forwarder1
+          - likyab1
+          - linkdir2
+          - linkdir3
+          - linkdir4
+          - linkdir5
+          - linkdir6
+    steps:
+      - name: Public egress IP
+        env:
+          ACCOUNT: ${{ matrix.account }}
+        run: |
+          set -euo pipefail
+          ip="$(curl -sS --max-time 15 https://api.ipify.org || true)"
+          echo "account=${ACCOUNT}"
+          echo "egress_ip=${ip}"
+          echo "runner=${RUNNER_NAME:-unknown}"
+          echo "egress_ip=${ip}" >> "$GITHUB_STEP_SUMMARY"
+          echo "### ${ACCOUNT}" >> "$GITHUB_STEP_SUMMARY"
+          echo "\`${ip}\`" >> "$GITHUB_STEP_SUMMARY"
