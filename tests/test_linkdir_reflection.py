@@ -472,13 +472,14 @@ def test_system_prompt_is_untouched_without_lessons() -> None:
 
 
 def test_system_prompt_injects_lessons_grouped_by_kind() -> None:
-    prompt = build_system_prompt(collect_lessons(FakeMemory(lessons=_lesson_rows())))
+    prompt = build_system_prompt(collect_lessons(FakeMemory(lessons=_lesson_rows()), query_set="fa"))
 
     assert prompt.startswith(SYSTEM_PROMPT)
-    assert "DO:" in prompt and "AVOID:" in prompt
-    assert prompt.index("DO:") < prompt.index("AVOID:")
+    assert "DO (when relevant):" in prompt and "AVOID (when relevant):" in prompt
+    assert prompt.index("DO (when relevant):") < prompt.index("AVOID (when relevant):")
     assert GOOD_LESSON in prompt
     assert AVOID_LESSON in prompt
+    assert "NOT hard rules" in prompt
 
 
 def test_generation_recalls_lessons_and_offers_the_tool() -> None:
@@ -503,7 +504,7 @@ def test_generation_recalls_lessons_and_offers_the_tool() -> None:
 
 
 def test_recall_tool_returns_lessons_on_demand() -> None:
-    lessons = collect_lessons(FakeMemory(lessons=_lesson_rows()))
+    lessons = collect_lessons(FakeMemory(lessons=_lesson_rows()), query_set="fa")
     tools = ai_queries.build_tools(
         ai_queries._Feedback(top=[], weak=[], existing=[], known_keys=set(), titles=[]),
         enable_web_search=False,
@@ -511,11 +512,16 @@ def test_recall_tool_returns_lessons_on_demand() -> None:
     )
     recall = {tool.name: tool for tool in tools}["recall_lessons"]
 
-    assert recall.handler({}) == [
-        {"kind": "do", "lesson": GOOD_LESSON},
-        {"kind": "avoid", "lesson": AVOID_LESSON},
+    all_rows = recall.handler({})
+    assert [(row["kind"], row["lesson"]) for row in all_rows] == [
+        ("do", GOOD_LESSON),
+        ("avoid", AVOID_LESSON),
     ]
-    assert recall.handler({"kind": "avoid"}) == [{"kind": "avoid", "lesson": AVOID_LESSON}]
+    assert all("scope" in row and "origin" in row for row in all_rows)
+    avoid_rows = recall.handler({"kind": "avoid"})
+    assert [(row["kind"], row["lesson"]) for row in avoid_rows] == [
+        ("avoid", AVOID_LESSON)
+    ]
 
 
 def test_generation_is_unchanged_when_memory_is_unavailable(

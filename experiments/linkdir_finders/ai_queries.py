@@ -29,7 +29,7 @@ MEMORY_AGENT = "linkdir_query"
 
 TOOL_ITEM_CAP = 15
 LESSON_PROMPT_LIMIT = 5
-LESSON_FETCH_LIMIT = 20
+LESSON_FETCH_LIMIT = 30
 LESSON_CHARS = 160
 _CATALOG_SCAN_LIMIT = 200
 _TITLE_CHARS = 60
@@ -68,9 +68,9 @@ Hard rules for every query you output:
 Call the provided tools first to learn which query patterns produced good and \
 bad results, then answer with the JSON object required by the schema.
 
-If the prompt or recall_lessons tool lists DO/AVOID lessons, treat them as \
-hard constraints from earlier scored runs and from the admin — obey them when \
-proposing new queries."""
+If experience hints (DO/AVOID) are listed, treat them as contextual guidance \
+for THIS query set only: apply what fits, skip what does not, and never force \
+every hint into every query. Prefer evidence-backed patterns over a single tip."""
 
 
 @dataclass
@@ -178,38 +178,46 @@ def collect_feedback(
 
 @dataclass
 class _Lessons:
-    """Distilled experience recalled from agent memory."""
+    """Distilled experience recalled from agent memory for one query_set."""
 
     do: list[str] = field(default_factory=list)
     avoid: list[str] = field(default_factory=list)
+    ranked: list[Any] = field(default_factory=list)
+    query_set: str = "fa"
 
     def injected(self) -> int:
-        return len(self.do[:LESSON_PROMPT_LIMIT]) + len(self.avoid[:LESSON_PROMPT_LIMIT])
-
-    def total(self) -> int:
         return len(self.do) + len(self.avoid)
 
+    def total(self) -> int:
+        return len(self.ranked) if self.ranked else (len(self.do) + len(self.avoid))
 
-def collect_lessons(memory: Any, *, limit: int = LESSON_FETCH_LIMIT) -> _Lessons:
-    """Read active lessons. Any failure yields an empty, harmless result."""
+
+def collect_lessons(
+    memory: Any,
+    *,
+    query_set: str = "fa",
+    limit: int = LESSON_FETCH_LIMIT,
+) -> _Lessons:
+    """Read and rank active lessons for the current shard."""
+    from experiments.linkdir_finders.lesson_recall import rank_lessons
+
     if memory is None:
-        return _Lessons()
+        return _Lessons(query_set=query_set)
     try:
         if not memory.available():
-            return _Lessons()
+            return _Lessons(query_set=query_set)
         rows = memory.lessons(limit=limit) or []
     except Exception as exc:  # noqa: BLE001 - memory is advisory only
         logger.warning("lesson recall failed: %s", exc)
-        return _Lessons()
+        return _Lessons(query_set=query_set)
 
-    lessons = _Lessons()
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        text = str(row.get("lesson") or "").strip()[:LESSON_CHARS]
+    ranked = rank_lessons(rows, query_set)
+    lessons = _Lessons(ranked=list(ranked), query_set=query_set)
+    for row in ranked:
+        text = str(row.lesson or "").strip()[:LESSON_CHARS]
         if not text:
             continue
-        if str(row.get("kind") or "do").strip().lower() == "avoid":
+        if row.kind == "avoid":
             lessons.avoid.append(text)
         else:
             lessons.do.append(text)
@@ -217,23 +225,31 @@ def collect_lessons(memory: Any, *, limit: int = LESSON_FETCH_LIMIT) -> _Lessons
 
 
 def build_system_prompt(lessons: _Lessons | None) -> str:
-    """Prepend recalled lessons to the base prompt, grouped by kind."""
+    """Prepend ranked, contextual lessons to the base prompt."""
+    from experiments.linkdir_finders.lesson_recall import format_lessons_for_prompt
+
     if lessons is None or not lessons.injected():
         return SYSTEM_PROMPT
 
-    parts = [
-        SYSTEM_PROMPT,
-        "",
-        "Lessons learned from earlier scored runs. Apply them:",
-    ]
-    if lessons.do:
-        parts.append("DO:")
-        parts.extend(f"- {text}" for text in lessons.do[:LESSON_PROMPT_LIMIT])
-    if lessons.avoid:
-        parts.append("AVOID:")
-        parts.extend(f"- {text}" for text in lessons.avoid[:LESSON_PROMPT_LIMIT])
-    parts.append("Call recall_lessons if you want the rest of them.")
-    return "\n".join(parts)
+    block = format_lessons_for_prompt(
+        list(lessons.ranked),
+        query_set=getattr(lessons, "query_set", "fa") or "fa",
+    )
+    if not block:
+        # Fallback for callers that only filled do/avoid strings.
+        parts = [
+            SYSTEM_PROMPT,
+            "",
+            "Experience hints (apply only when relevant to this query set):",
+        ]
+        if lessons.do:
+            parts.append("DO (when relevant):")
+            parts.extend(f"- {text}" for text in lessons.do[:LESSON_PROMPT_LIMIT])
+        if lessons.avoid:
+            parts.append("AVOID (when relevant):")
+            parts.extend(f"- {text}" for text in lessons.avoid[:LESSON_PROMPT_LIMIT])
+        return "\n".join(parts)
+    return SYSTEM_PROMPT + "\n\n" + block
 
 
 def build_tools(
@@ -272,8 +288,9 @@ def build_tools(
             AgentTool(
                 name="recall_lessons",
                 description=(
-                    "Lessons distilled from earlier scored runs. Optional 'kind' "
-                    "filter: 'do' or 'avoid'."
+                    "More experience hints from earlier runs. Optional 'kind' "
+                    "filter: 'do' or 'avoid'. Hints are contextual — use only "
+                    "what fits the current query set."
                 ),
                 parameters={
                     "type": "object",
@@ -315,6 +332,21 @@ def build_tools(
 def _recall(lessons: _Lessons, args: dict[str, Any]) -> list[dict[str, str]]:
     kind = str((args or {}).get("kind") or "").strip().lower()
     rows: list[dict[str, str]] = []
+    if lessons.ranked:
+        for row in lessons.ranked:
+            if kind == "do" and row.kind != "do":
+                continue
+            if kind == "avoid" and row.kind != "avoid":
+                continue
+            rows.append(
+                {
+                    "kind": row.kind,
+                    "lesson": row.lesson,
+                    "scope": row.scope,
+                    "origin": row.origin,
+                }
+            )
+        return rows[:TOOL_ITEM_CAP]
     if kind != "avoid":
         rows.extend({"kind": "do", "lesson": text} for text in lessons.do)
     if kind != "do":
@@ -413,7 +445,9 @@ def generate_queries(
             memory = AgentMemory(MEMORY_AGENT)
 
         feedback = collect_feedback(catalog, static_queries=list(static_queries))
-        lessons = collect_lessons(memory) if use_memory else _Lessons()
+        lessons = (
+            collect_lessons(memory, query_set=shard) if use_memory else _Lessons(query_set=shard)
+        )
         tools = build_tools(feedback, enable_web_search=use_web, lessons=lessons)
     except Exception as exc:  # noqa: BLE001 - setup must not break the pipeline
         logger.warning("AI query generation setup failed: %s", exc)
@@ -432,6 +466,12 @@ def generate_queries(
     result = agent.run(_user_prompt(want, shard, feedback))
     diagnostics: dict[str, Any] = result.diagnostics()
     diagnostics["lessons_used"] = lessons.injected()
+    diagnostics["lessons_do"] = len(lessons.do)
+    diagnostics["lessons_avoid"] = len(lessons.avoid)
+    if lessons.ranked:
+        diagnostics["lesson_scopes"] = sorted(
+            {str(getattr(row, "scope", "all")) for row in lessons.ranked}
+        )
     if use_web:
         from experiments.linkdir_finders.web_search import backend_name
 

@@ -236,6 +236,12 @@ class AgentMemory:
                 row["confidence"] = max(0.0, min(1.0, float(confidence)))
             except (TypeError, ValueError):
                 pass
+        scope = str(raw.get("scope") or "").strip()
+        if scope:
+            row["scope"] = scope
+        origin = str(raw.get("origin") or "").strip()
+        if origin:
+            row["origin"] = origin
         return row
 
     def lessons(
@@ -254,6 +260,28 @@ class AgentMemory:
         if not isinstance(rows, list):
             return []
         return [row for row in rows if isinstance(row, dict)]
+
+    def deactivate_lessons(self, lesson_keys: Iterable[Any]) -> int:
+        """Soft-delete lessons by key. Returns rows updated."""
+        keys = sorted(
+            {
+                str(item).strip()
+                for item in (lesson_keys or [])
+                if str(item or "").strip()
+            }
+        )
+        if not keys:
+            return 0
+        updated = 0
+        for chunk in _chunks(keys, BATCH_SIZE):
+            resp = self._call(
+                "POST",
+                "/internal/agentmem/deactivate",
+                payload={"agent": self.agent, "lesson_keys": chunk},
+            )
+            if resp is not None:
+                updated += _as_int(resp.get("updated"))
+        return updated
 
     def mark_consolidated(self, episode_ids: Iterable[Any]) -> int:
         """Flag episodes as already reflected on. Returns rows updated."""

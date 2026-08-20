@@ -51,10 +51,19 @@ RESPONSE_SCHEMA: dict[str, Any] = {
                     "lesson": {"type": "string"},
                     "evidence": {"type": "array", "items": {"type": "integer"}},
                     "confidence": {"type": "number"},
+                    "scope": {
+                        "type": "string",
+                        "description": "all | fa | en | niche | comma list e.g. fa,niche",
+                    },
                 },
                 "required": ["kind", "lesson", "evidence"],
             },
-        }
+        },
+        "retire": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "lesson_key values that are obsolete or harmful to keep active",
+        },
     },
     "required": ["lessons"],
 }
@@ -75,8 +84,12 @@ and digits, and ordinary sentence punctuation.
 - "evidence" MUST list episode ids taken from the episodes shown to you. Never \
 invent an id, and never write a lesson you cannot point at evidence for.
 - "confidence" is between 0 and 1.
+- "scope" says where the lesson applies: "fa", "en", "niche", "all", or a \
+comma list like "fa,niche". City-name advice must NOT use scope "en".
 - Say something specific about wording, niche, length or phrasing — not \
-generic advice like "write better queries"."""
+generic advice like "write better queries".
+- You may also return "retire": [lesson_key, ...] for older lessons that the \
+new evidence shows are obsolete, over-narrow, or harmful if always applied."""
 
 
 @dataclass
@@ -87,6 +100,7 @@ class ReflectionResult:
     reason: str = "ok"
     lessons: list[dict[str, Any]] = field(default_factory=list)
     rejected: list[dict[str, str]] = field(default_factory=list)
+    retired: list[str] = field(default_factory=list)
     episode_ids: list[int] = field(default_factory=list)
     created: int = 0
     reinforced: int = 0
@@ -100,6 +114,7 @@ class ReflectionResult:
             "episodes": len(self.episode_ids),
             "lessons": len(self.lessons),
             "rejected": len(self.rejected),
+            "retired": len(self.retired),
             "created": self.created,
             "reinforced": self.reinforced,
             "consolidated": self.consolidated,
@@ -158,7 +173,12 @@ def _episode_line(row: dict[str, Any]) -> str:
     )
 
 
-def build_prompt(best: list[dict[str, Any]], worst: list[dict[str, Any]]) -> str:
+def build_prompt(
+    best: list[dict[str, Any]],
+    worst: list[dict[str, Any]],
+    *,
+    existing: list[dict[str, Any]] | None = None,
+) -> str:
     lines = [
         "Best-performing queries so far (highest reward):",
         *(_episode_line(row) for row in best),
@@ -166,17 +186,49 @@ def build_prompt(best: list[dict[str, Any]], worst: list[dict[str, Any]]) -> str
         "Worst-performing queries so far (lowest reward):",
         *(_episode_line(row) for row in worst),
         "",
-        f"Write at most {MAX_LESSONS} lessons, in Persian, mixing 'do' and 'avoid'.",
-        'Answer with JSON only: {"lessons": [{"kind": "...", "lesson": "...", '
-        '"evidence": [12, 34], "confidence": 0.7}]}',
     ]
+    if existing:
+        lines.append("Active lessons already in memory (retire keys that no longer help):")
+        for row in existing[:12]:
+            key = str(row.get("lesson_key") or "").strip() or "-"
+            kind = str(row.get("kind") or "do")
+            scope = str(row.get("scope") or "all")
+            text = str(row.get("lesson") or "")[:80]
+            lines.append(f"- key={key} kind={kind} scope={scope} :: {text}")
+        lines.append("")
+    lines.extend(
+        [
+            f"Write at most {MAX_LESSONS} lessons, in Persian, mixing 'do' and 'avoid'.",
+            "Set scope so English shards are not forced to follow Persian-only tips.",
+            'Answer with JSON only: {"lessons": [{"kind": "...", "lesson": "...", '
+            '"evidence": [12, 34], "confidence": 0.7, "scope": "fa,niche"}], '
+            '"retire": ["lesson_key"]}',
+        ]
+    )
     return "\n".join(lines)
+
+
+def parse_retire(payload: Any, known_keys: set[str]) -> list[str]:
+    """Accept only retire keys that already exist in memory."""
+    if not isinstance(payload, dict):
+        return []
+    raw = payload.get("retire")
+    if not isinstance(raw, list):
+        return []
+    out: list[str] = []
+    for item in raw:
+        key = str(item or "").strip()
+        if key and key in known_keys and key not in out:
+            out.append(key)
+    return out
 
 
 def parse_lessons(
     payload: Any, allowed_ids: set[int]
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]]]:
     """Validate model output against the allowlist and the supplied evidence."""
+    from experiments.linkdir_finders.lesson_recall import infer_scope
+
     rows = payload.get("lessons") if isinstance(payload, dict) else payload
     if not isinstance(rows, list):
         return [], [{"lesson": str(payload)[:60], "reason": "not_a_list"}]
@@ -238,6 +290,7 @@ def parse_lessons(
         except (TypeError, ValueError):
             confidence = DEFAULT_CONFIDENCE
 
+        scope = infer_scope(text, explicit=raw.get("scope"))
         accepted.append(
             {
                 "kind": kind,
@@ -245,6 +298,8 @@ def parse_lessons(
                 "lesson_key": key,
                 "evidence": evidence,
                 "confidence": max(0.0, min(1.0, confidence)),
+                "scope": scope,
+                "origin": "reflection",
             }
         )
 
@@ -316,6 +371,17 @@ def reflect(
 
     from app.cloudflare_ai.agent import Agent
 
+    existing: list[dict[str, Any]] = []
+    try:
+        existing = list(memory.lessons(limit=20) or [])
+    except Exception:  # noqa: BLE001
+        existing = []
+    known_keys = {
+        str(row.get("lesson_key") or "").strip()
+        for row in existing
+        if str(row.get("lesson_key") or "").strip()
+    }
+
     agent = Agent(
         provider,
         system_prompt=SYSTEM_PROMPT,
@@ -323,10 +389,11 @@ def reflect(
         response_schema=RESPONSE_SCHEMA,
         temperature=0.3,
     )
-    run = agent.run(build_prompt(top, bottom))
+    run = agent.run(build_prompt(top, bottom, existing=existing))
     diagnostics: dict[str, Any] = run.diagnostics()
     diagnostics["best"] = len(top)
     diagnostics["worst"] = len(bottom)
+    diagnostics["existing_lessons"] = len(existing)
 
     if not run.ok:
         return ReflectionResult(
@@ -343,7 +410,8 @@ def reflect(
         payload = parse_json_object(run.content)
 
     accepted, rejected = parse_lessons(payload, allowed_ids)
-    if not accepted:
+    retire_keys = parse_retire(payload, known_keys)
+    if not accepted and not retire_keys:
         return ReflectionResult(
             ok=False,
             reason="no_valid_lessons",
@@ -358,28 +426,38 @@ def reflect(
             reason="dry_run",
             lessons=accepted,
             rejected=rejected,
+            retired=retire_keys,
             episode_ids=sorted(allowed_ids),
             diagnostics=diagnostics,
         )
 
-    try:
-        written = memory.add_lessons(accepted)
-        created = int(written.get("created") or 0)
-        reinforced = int(written.get("reinforced") or 0)
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("lesson write failed: %s", exc)
-        return ReflectionResult(
-            ok=False,
-            reason="lesson_write_failed",
-            lessons=accepted,
-            rejected=rejected,
-            episode_ids=sorted(allowed_ids),
-            diagnostics={**diagnostics, "error": str(exc)[:200]},
-        )
+    created = reinforced = retired = 0
+    if accepted:
+        try:
+            written = memory.add_lessons(accepted)
+            created = int(written.get("created") or 0)
+            reinforced = int(written.get("reinforced") or 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("lesson write failed: %s", exc)
+            return ReflectionResult(
+                ok=False,
+                reason="lesson_write_failed",
+                lessons=accepted,
+                rejected=rejected,
+                retired=retire_keys,
+                episode_ids=sorted(allowed_ids),
+                diagnostics={**diagnostics, "error": str(exc)[:200]},
+            )
+
+    if retire_keys:
+        try:
+            retired = int(memory.deactivate_lessons(retire_keys) or 0)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("lesson retire failed: %s", exc)
 
     # Only burn the evidence once something was actually learned from it.
     consolidated = 0
-    if created or reinforced:
+    if created or reinforced or retired:
         try:
             consolidated = int(memory.mark_consolidated(sorted(allowed_ids)) or 0)
         except Exception as exc:  # noqa: BLE001
@@ -390,9 +468,10 @@ def reflect(
         reason="ok",
         lessons=accepted,
         rejected=rejected,
+        retired=retire_keys,
         episode_ids=sorted(allowed_ids),
         created=created,
         reinforced=reinforced,
         consolidated=consolidated,
-        diagnostics=diagnostics,
+        diagnostics={**diagnostics, "retired_count": retired},
     )
