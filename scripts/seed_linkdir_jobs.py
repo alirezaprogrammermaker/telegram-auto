@@ -27,17 +27,23 @@ def _enqueue_list(
     priority: int,
     redo_days: int,
     dry_run: bool,
+    source: str = "seed_script",
 ) -> dict[str, int]:
     enqueued = skipped = failed = 0
     for query in queries:
         if dry_run:
-            print(json.dumps({"query": query, "query_set": query_set}, ensure_ascii=False))
+            print(
+                json.dumps(
+                    {"query": query, "query_set": query_set, "source": source},
+                    ensure_ascii=False,
+                )
+            )
             continue
         resp = enqueue_search_job(
             query,
             priority=priority,
             redo_after_days=redo_days,
-            source="seed_script",
+            source=source,
             query_set=query_set,
         )
         if not resp or not resp.get("ok"):
@@ -54,6 +60,36 @@ def _enqueue_list(
         "skipped": skipped,
         "failed": failed,
     }
+
+
+def _generate_ai_queries(
+    cfg: dict,
+    *,
+    shard: str,
+    count: int,
+    known: list[str],
+) -> tuple[list[str], dict]:
+    """Best-effort AI query generation. Returns (queries, summary) — never raises."""
+    try:
+        from experiments.linkdir_finders.ai_queries import generate_queries
+
+        result = generate_queries(
+            count=count,
+            query_set=shard,
+            cfg=cfg,
+            static_queries=known,
+        )
+    except Exception as exc:  # noqa: BLE001 - AI is strictly additive
+        print(f"::warning::AI query generation crashed for {shard}: {exc}", file=sys.stderr)
+        return [], {"used": False, "reason": "exception", "error": str(exc)[:200]}
+
+    if not result.ok:
+        print(
+            f"::warning::AI queries unavailable for {shard} ({result.reason}); "
+            "using static queries only",
+            file=sys.stderr,
+        )
+    return list(result.queries), result.summary()
 
 
 def main() -> int:
@@ -86,6 +122,21 @@ def main() -> int:
         action="store_true",
         help="Print queries only; do not enqueue",
     )
+    parser.add_argument(
+        "--ai",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help=(
+            "Also generate queries with the Cloudflare AI agent (falls back silently). "
+            "Use --no-ai to override config ai_queries.enabled"
+        ),
+    )
+    parser.add_argument(
+        "--ai-count",
+        type=int,
+        default=None,
+        help="AI queries per shard (default: config ai_queries.count)",
+    )
     args = parser.parse_args()
 
     if not args.dry_run and not bridge_ready():
@@ -103,8 +154,13 @@ def main() -> int:
         if args.redo_after_days is not None
         else jq.get("search_redo_days") or 14
     )
+    ai_cfg = cfg.get("ai_queries") or {}
+    ai_enabled = bool(ai_cfg.get("enabled")) if args.ai is None else bool(args.ai)
+    ai_count = int(args.ai_count if args.ai_count is not None else ai_cfg.get("count") or 15)
+
     shards = list(SHARDS) if args.query_set == "all" else [args.query_set]
     shard_summaries: list[dict[str, object]] = []
+    ai_summaries: list[dict[str, object]] = []
     failed_total = 0
 
     for shard in shards:
@@ -115,15 +171,34 @@ def main() -> int:
                 niches=list(jq.get("seed_niches") or []),
                 suffixes=list(jq.get("seed_suffixes") or []),
             )
+        priority = args.priority + (10 if shard == "niche" else 0)
         counts = _enqueue_list(
             queries,
             query_set=shard,
-            priority=args.priority + (10 if shard == "niche" else 0),
+            priority=priority,
             redo_days=redo_days,
             dry_run=bool(args.dry_run),
         )
         failed_total += int(counts["failed"])
         shard_summaries.append({"query_set": shard, **counts})
+
+        if not ai_enabled:
+            continue
+        ai_queries, ai_summary = _generate_ai_queries(
+            cfg, shard=shard, count=ai_count, known=queries
+        )
+        ai_summaries.append({"query_set": shard, **ai_summary})
+        if not ai_queries:
+            continue
+        ai_counts = _enqueue_list(
+            ai_queries,
+            query_set=shard,
+            priority=priority,
+            redo_days=redo_days,
+            dry_run=bool(args.dry_run),
+            source="ai_agent",
+        )
+        shard_summaries.append({"query_set": shard, "source": "ai_agent", **ai_counts})
 
     summary = {
         "query_set": args.query_set,
@@ -133,8 +208,15 @@ def main() -> int:
         "shards": shard_summaries,
         "enqueued": sum(int(s["enqueued"]) for s in shard_summaries),
         "skipped": sum(int(s["skipped"]) for s in shard_summaries),
-        "failed": failed_total,
+        "failed": sum(int(s["failed"]) for s in shard_summaries),
     }
+    if ai_enabled:
+        summary["ai"] = {
+            "enabled": True,
+            "count": ai_count,
+            "used": any(bool(s.get("used")) for s in ai_summaries),
+            "shards": ai_summaries,
+        }
     print(json.dumps(summary, ensure_ascii=False))
     return 0 if failed_total == 0 else 1
 

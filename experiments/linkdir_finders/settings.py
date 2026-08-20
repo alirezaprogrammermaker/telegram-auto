@@ -52,6 +52,13 @@ _DEFAULTS: dict[str, Any] = {
         "seed_niches": ["گپ", "کانال", "گروه"],
         "seed_suffixes": ["لینک", "لینکدونی", "تبادل لینک"],
     },
+    "ai_queries": {
+        "enabled": False,
+        "count": 15,
+        "model": None,
+        "web_search": False,
+        "max_tool_rounds": 4,
+    },
     "snowball": {
         "hops": 1,
         "seed_limit": 10,

@@ -11,6 +11,16 @@ from typing import Any
 from telethon import TelegramClient, events
 from telethon.errors import FloodWaitError, RPCError
 
+from telethon import Button
+
+from app.admin_keyboard import (
+    KeyboardMenu,
+    is_keyboard_label,
+    keyboard_command_for,
+    keyboard_navigation_for,
+    keyboard_rows,
+    menu_prompt,
+)
 from app.base import BaseModule
 from app.paths import ROOT, data_path
 from app.progress import ProgressMessenger
@@ -100,6 +110,8 @@ class AutoReplyModule(BaseModule):
             self.reply_text,
             self.admin_welcome,
             self.logout_message,
+            menu_prompt("main"),
+            menu_prompt("cfai"),
         }
 
     def _runtime(self):
@@ -158,6 +170,7 @@ class AutoReplyModule(BaseModule):
             ("/harvest status|add|remove", "جمع‌آوری لینک از لینکدونی (collector)"),
             ("/inspect status|dryrun|budget", "بازرسی آهسته گروه (inspector)"),
             ("/pool status|list|approve|to-promo", "استخر مشترک کشف گروه"),
+            ("/cfai status|accounts|test|model", "مدیریت Cloudflare Workers AI"),
             (self.logout_command, "خروج از حالت مدیر"),
             ("/login", "راهنمای ورود دوباره"),
             ("/login <رمز>", "ورود مدیر با رمز"),
@@ -222,6 +235,9 @@ class AutoReplyModule(BaseModule):
 
         if cmd in {"/harvest", "/inspect", "/pool"}:
             return "__POOL_PROGRESS__"
+
+        if cmd == "/cfai":
+            return "__CFAI_PROGRESS__"
 
         return None
 
@@ -586,6 +602,15 @@ class AutoReplyModule(BaseModule):
             await handle_inspect_command(parts, cfg=cfg, runtime=runtime, progress=progress)
             return
         await handle_pool_command(parts, runtime=runtime, progress=progress)
+
+    async def _handle_cfai_command(
+        self,
+        parts: list[str],
+        progress: ProgressMessenger,
+    ) -> None:
+        from app.cloudflare_ai.admin_commands import handle_cfai_command
+
+        await handle_cfai_command(parts, progress=progress)
 
     async def _handle_config_command(
         self,
@@ -999,6 +1024,25 @@ class AutoReplyModule(BaseModule):
             return False
         return got == expected
 
+    def _admin_keyboard_markup(self, menu: str):
+        return self.client.build_reply_markup(keyboard_rows(menu))
+
+    async def _show_admin_keyboard(
+        self,
+        event: events.NewMessage.Event,
+        menu: KeyboardMenu,
+        *,
+        prefix: str | None = None,
+    ) -> None:
+        text = menu_prompt(menu)
+        if prefix:
+            text = f"{prefix}\n\n{text}"
+        markup = self._admin_keyboard_markup(menu)
+        chat_id = event.chat_id
+        if chat_id is None:
+            return
+        await self.client.send_message(chat_id, text, buttons=markup)
+
     async def _grant_admin(self, event: events.NewMessage.Event, peer_key: int) -> None:
         self._admins.add(peer_key)
         self._save_admins()
@@ -1006,7 +1050,13 @@ class AutoReplyModule(BaseModule):
         if self.send_help_on_login:
             welcome = f"{self.admin_welcome}\n\n{self._build_help_text()}"
         # Send first, then delete password message (respond-after-delete is unreliable)
-        await self.client.send_message(event.chat_id, welcome)
+        chat_id = event.chat_id
+        if chat_id is not None:
+            await self.client.send_message(
+                chat_id,
+                welcome,
+                buttons=self._admin_keyboard_markup("main"),
+            )
         if self.delete_password_message and not event.out:
             try:
                 await event.delete()
@@ -1079,8 +1129,6 @@ class AutoReplyModule(BaseModule):
 
         if text in self._known_bot_texts:
             return
-        if text.startswith("📋 دستورات مدیر") or text.startswith("🧩 وضعیت ماژول"):
-            return
         if text.startswith("📡") or text.startswith("⏳"):
             return
         if self.skip_media_only and not text:
@@ -1114,6 +1162,33 @@ class AutoReplyModule(BaseModule):
             await self._grant_admin(event, peer_key)
             return
 
+        if cmd == "/start":
+            if not self._is_admin(peer_key):
+                await self._send(
+                    event,
+                    "ابتدا وارد شو: رمز را بفرست یا `/login`",
+                )
+                return
+            await self._show_admin_keyboard(event, "main")
+            return
+
+        mapped_cmd = keyboard_command_for(text)
+        nav_menu = keyboard_navigation_for(text)
+        if mapped_cmd:
+            text = mapped_cmd
+            cmd = self._normalize_command(text)
+        elif is_keyboard_label(text):
+            if not self._is_admin(peer_key):
+                await self._send(
+                    event,
+                    "ابتدا وارد شو: رمز را بفرست یا `/login`",
+                )
+                return
+            if nav_menu:
+                await self._show_admin_keyboard(event, nav_menu)
+                return
+            return
+
         # Help / command list — admin only
         if cmd in self.help_commands or text.strip().lower() in self.help_commands:
             if not self._is_admin(peer_key):
@@ -1122,7 +1197,16 @@ class AutoReplyModule(BaseModule):
                     "ابتدا وارد شو: رمز را بفرست یا `/login`",
                 )
                 return
-            await self._send(event, self._build_help_text())
+            chat_id = event.chat_id
+            help_text = self._build_help_text()
+            if chat_id is not None:
+                await self.client.send_message(
+                    chat_id,
+                    help_text,
+                    buttons=self._admin_keyboard_markup("main"),
+                )
+            else:
+                await self._send(event, help_text)
             logger.info("help sent to user_id=%s", peer_key)
             return
 
@@ -1163,16 +1247,24 @@ class AutoReplyModule(BaseModule):
             if peer_key in self._admins:
                 self._admins.discard(peer_key)
                 self._save_admins()
-                await self._send(
-                    event,
+                logout_text = (
                     self.logout_message
                     if "login" in self.logout_message.lower()
                     or "رمز" in self.logout_message
                     else (
                         f"{self.logout_message}\n"
                         "برای ورود دوباره فقط رمز را بفرست یا: /login"
-                    ),
+                    )
                 )
+                chat_id = event.chat_id
+                if chat_id is not None:
+                    await self.client.send_message(
+                        chat_id,
+                        logout_text,
+                        buttons=Button.clear(),
+                    )
+                else:
+                    await self._send(event, logout_text)
                 logger.info("admin logged out user_id=%s", peer_key)
             else:
                 await self._send(event, "الان وارد نیستی. برای ورود: `/login`")
@@ -1234,6 +1326,16 @@ class AutoReplyModule(BaseModule):
                 await self._handle_pool_family_command(text.split(), progress)
             except Exception as exc:
                 logger.exception("%s command failed", cmd)
+                await progress.fail(str(exc))
+            return
+
+        if cmd == "/cfai":
+            progress = ProgressMessenger(event)
+            await progress.start("⏳ Cloudflare AI…")
+            try:
+                await self._handle_cfai_command(text.split(), progress)
+            except Exception as exc:
+                logger.exception("cfai command failed")
                 await progress.fail(str(exc))
             return
 

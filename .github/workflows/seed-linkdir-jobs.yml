@@ -16,6 +16,16 @@ on:
         required: false
         type: string
         default: "all"
+      use_ai:
+        description: "Generate extra queries with the Cloudflare AI agent"
+        required: false
+        type: boolean
+        default: true
+      ai_count:
+        description: "AI queries per shard (blank = config default)"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -48,6 +58,14 @@ jobs:
           set -euo pipefail
           args=""
           if [ "${{ inputs.expand_templates }}" = "true" ]; then
-            args="--expand-templates"
+            args="$args --expand-templates"
+          fi
+          if [ "${{ inputs.use_ai }}" = "true" ]; then
+            args="$args --ai"
+          else
+            args="$args --no-ai"
+          fi
+          if [ -n "${{ inputs.ai_count }}" ]; then
+            args="$args --ai-count ${{ inputs.ai_count }}"
           fi
           python3 scripts/seed_linkdir_jobs.py --query-set "${{ inputs.query_set }}" $args
