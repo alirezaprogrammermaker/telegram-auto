@@ -31,6 +31,7 @@ def seed_module():
 @pytest.fixture
 def bridge(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
     """Wire the real enqueue path to an in-memory bridge and record payloads."""
+    import app.agent_memory as agent_memory
     import app.linkdir_bridge as linkdir_bridge
 
     monkeypatch.setenv("ADMIN_BOT_BRIDGE_URL", "https://bridge.test")
@@ -39,10 +40,21 @@ def bridge(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
 
     def fake_request(method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         recorded.append({"method": method, "path": path, **kwargs})
-        return {"ok": True, "id": len(recorded)}
+        rows = (kwargs.get("payload") or {}).get("episodes") or []
+        return {"ok": True, "id": len(recorded), "inserted": len(rows)}
 
     monkeypatch.setattr(linkdir_bridge, "bridge_request", fake_request)
+    monkeypatch.setattr(agent_memory, "bridge_request", fake_request)
     return recorded
+
+
+def _episodes(recorded: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return [
+        episode
+        for row in recorded
+        if row["path"].endswith("/agentmem/episodes")
+        for episode in row["payload"]["episodes"]
+    ]
 
 
 def _run(module: Any, argv: list[str], monkeypatch: pytest.MonkeyPatch) -> int:
@@ -143,6 +155,89 @@ def test_ai_flag_enqueues_generated_queries_with_traceable_source(
     assert summary["ai"]["used"] is True
     assert summary["ai"]["shards"][0]["accepted"] == 2
     assert summary["enqueued"] == len(load_config()["queries_fa"]) + 2
+
+
+def test_generated_queries_are_recorded_as_episodes(
+    seed_module: Any,
+    bridge: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    from experiments.linkdir_finders.job_queue import query_key
+
+    monkeypatch.setattr(
+        ai_queries,
+        "generate_queries",
+        lambda **_kwargs: QueryGenResult(
+            ok=True,
+            queries=["لینکدونی یزد", "لینکدونی کرمان"],
+            used_ai=True,
+            reason="ok",
+            diagnostics={"model": "@cf/openai/gpt-oss-120b"},
+        ),
+    )
+
+    code = _run(seed_module, ["--query-set", "fa", "--ai"], monkeypatch)
+    summary = _summary(capsys)
+    episodes = _episodes(bridge)
+
+    assert code == 0
+    assert [row["subject"] for row in episodes] == ["لینکدونی یزد", "لینکدونی کرمان"]
+    assert episodes[0]["subject_key"] == query_key("لینکدونی یزد")
+    assert {row["source"] for row in episodes} == {"ai_agent"}
+    assert {row["query_set"] for row in episodes} == {"fa"}
+    assert episodes[0]["meta"]["model"] == "@cf/openai/gpt-oss-120b"
+    assert summary["ai"]["shards"][0]["episodes"] == 2
+
+
+def test_episode_write_failure_does_not_change_the_outcome(
+    seed_module: Any,
+    bridge: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    import app.agent_memory as agent_memory
+
+    monkeypatch.setattr(
+        ai_queries,
+        "generate_queries",
+        lambda **_kwargs: QueryGenResult(
+            ok=True, queries=["لینکدونی یزد"], used_ai=True, reason="ok"
+        ),
+    )
+    monkeypatch.setattr(
+        agent_memory.AgentMemory,
+        "record_episodes",
+        lambda self, rows: (_ for _ in ()).throw(RuntimeError("d1 unreachable")),
+    )
+
+    code = _run(seed_module, ["--query-set", "fa", "--ai"], monkeypatch)
+    summary = _summary(capsys)
+
+    assert code == 0
+    assert summary["ai"]["shards"][0]["episodes"] == 0
+    assert summary["enqueued"] == len(load_config()["queries_fa"]) + 1
+
+
+def test_dry_run_records_no_episodes(
+    seed_module: Any,
+    bridge: list[dict[str, Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr(
+        ai_queries,
+        "generate_queries",
+        lambda **_kwargs: QueryGenResult(
+            ok=True, queries=["لینکدونی البرز"], used_ai=True, reason="ok"
+        ),
+    )
+
+    code = _run(seed_module, ["--query-set", "fa", "--ai", "--dry-run"], monkeypatch)
+    capsys.readouterr()
+
+    assert code == 0
+    assert _episodes(bridge) == []
 
 
 def test_ai_failure_keeps_static_queries_and_exit_code(

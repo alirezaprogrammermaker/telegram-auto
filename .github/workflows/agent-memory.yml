@@ -1,0 +1,97 @@
+# Experience memory for the linkdir query agent: score episodes from catalog
+# verdicts, then periodically distil them into lessons.
+# Requires ADMIN_BOT_BRIDGE_URL + ADMIN_BOT_BRIDGE_TOKEN repo secrets.
+
+name: agent-memory
+
+on:
+  schedule:
+    # Scoring: every 6h, offset from the 06:00 UTC collector wave so a wave's
+    # verdicts have landed in the catalog before the next pass reads it.
+    - cron: "25 */6 * * *"
+    # Reflection: twice a week. An episode needs a full seed -> claim ->
+    # collect -> classify cycle (24-48h) before its reward means anything, and
+    # reflecting on a single day of traffic just fits noise. Mon/Thu leaves
+    # ~40-90 newly scored episodes per pass, well over the 8-episode floor,
+    # for two LLM calls a week.
+    - cron: "35 3 * * 1,4"
+  workflow_dispatch:
+    inputs:
+      run_score:
+        description: "Score unscored episodes from catalog verdicts"
+        required: false
+        type: boolean
+        default: true
+      run_reflect:
+        description: "Distil scored episodes into lessons"
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "Compute everything but write nothing back"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-memory
+  cancel-in-progress: false
+
+jobs:
+  memory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Scheduled runs carry no `inputs`, so every knob needs an explicit default
+    # keyed on github.event_name — otherwise an empty input silently disables
+    # the step. github.event.schedule tells the two crons apart.
+    env:
+      # Explicit string defaults so schedule vs dispatch never silently disables a step.
+      RUN_SCORE: ${{ github.event_name == 'schedule' && 'true' || (inputs.run_score && 'true' || 'false') }}
+      RUN_REFLECT: ${{ github.event_name == 'schedule' && (github.event.schedule == '35 3 * * 1,4' && 'true' || 'false') || (inputs.run_reflect && 'true' || 'false') }}
+      DRY_RUN: ${{ github.event_name == 'schedule' && 'false' || (inputs.dry_run && 'true' || 'false') }}
+    steps:
+      - name: Checkout repo
+        run: |
+          set -euo pipefail
+          rm -rf ./* ./.[!.]* 2>/dev/null || true
+          git clone --depth 1 --branch master \
+            "https://github.com/${GITHUB_REPOSITORY}.git" repo
+          shopt -s dotglob
+          mv repo/* .
+          rm -rf repo
+
+      - name: Install deps
+        run: |
+          python3 -m pip install --upgrade --quiet pip
+          python3 -m pip install --quiet -r requirements.txt
+
+      - name: Score episodes
+        if: env.RUN_SCORE == 'true'
+        env:
+          ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          set -euo pipefail
+          args=""
+          if [ "$DRY_RUN" = "true" ]; then
+            args="--dry-run"
+          fi
+          python3 scripts/score_agent_memory.py $args
+
+      - name: Reflect on episodes
+        if: env.RUN_REFLECT == 'true'
+        env:
+          ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          set -euo pipefail
+          args=""
+          if [ "$DRY_RUN" = "true" ]; then
+            args="--dry-run"
+          fi
+          python3 scripts/reflect_agent_memory.py $args

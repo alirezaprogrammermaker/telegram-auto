@@ -1,13 +1,19 @@
-"""Strict validation for machine-generated Telegram search queries.
+"""Strict validation for machine-generated Telegram search queries and lessons.
 
 A JSON schema constrains the *shape* of model output, never its script, so
 models routinely slip CJK, Cyrillic or emoji into otherwise plausible Persian
-queries. This module is the allowlist gate every generated query must pass
-before it can reach the job queue.
+text. This module is the allowlist gate every generated string must pass
+before it can reach the job queue or the lesson store.
+
+Queries and lessons share the script allowlist and the normalizer but not the
+shape rules: a query is a 1-5 word search phrase, a lesson is a Persian
+sentence, so :func:`validate_lesson` is a separate gate rather than a looser
+:func:`validate_query`.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 import unicodedata
 from typing import Any, Iterable
@@ -17,6 +23,11 @@ MAX_LENGTH = 40
 MIN_WORDS = 1
 MAX_WORDS = 5
 
+LESSON_MIN_LENGTH = 12
+LESSON_MAX_LENGTH = 220
+LESSON_MIN_WORDS = 3
+LESSON_MAX_WORDS = 40
+
 ZWNJ = "\u200c"
 TATWEEL = "\u0640"
 
@@ -25,6 +36,9 @@ TATWEEL = "\u0640"
 _EXTRA_ALLOWED = {"\ufb8a", ZWNJ}
 _ALLOWED_PUNCT = set("_-@.")
 _PROSE_MARKERS = (":", "\n", "\r", "\t", "|", "،", "؛", "؟", "?", '"', "'")
+
+# Sentence punctuation a lesson may use but a search query may not.
+_LESSON_PUNCT = set("،؛؟:!?,;()«»\"'/%+×٪")
 
 _WHITESPACE_RE = re.compile(r"\s+")
 _ARABIC_RANGE = ("\u0600", "\u06ff")
@@ -101,6 +115,80 @@ def validate_query(query: str, *, known_keys: set[str] | None = None) -> str | N
 
 def is_valid_query(query: str, *, known_keys: set[str] | None = None) -> bool:
     return validate_query(query, known_keys=known_keys) is None
+
+
+def _is_allowed_lesson_char(ch: str) -> bool:
+    return _is_allowed_char(ch) or ch in _LESSON_PUNCT
+
+
+def disallowed_lesson_chars(text: str) -> list[str]:
+    """Distinct characters in a lesson that fall outside the allowlist."""
+    seen: list[str] = []
+    for ch in text:
+        if _is_allowed_lesson_char(ch) or ch in seen:
+            continue
+        seen.append(ch)
+    return seen
+
+
+def has_persian(text: str) -> bool:
+    return any(_ARABIC_RANGE[0] <= ch <= _ARABIC_RANGE[1] for ch in text)
+
+
+def normalize_lesson(text: str) -> str:
+    """Collapse a lesson to one canonical single-line sentence."""
+    return normalize_query(str(text or "").replace("\n", " ").replace("\r", " "))
+
+
+def validate_lesson(lesson: str) -> str | None:
+    """Return a rejection reason, or ``None`` when the lesson is acceptable.
+
+    Same script allowlist as :func:`validate_query` plus sentence punctuation,
+    with sentence-sized length limits and a requirement that the lesson is
+    actually written in Persian.
+    """
+    normalized = normalize_lesson(lesson)
+    if not normalized:
+        return "empty"
+
+    bad = disallowed_lesson_chars(normalized)
+    if bad:
+        codes = ",".join(f"U+{ord(ch):04X}" for ch in bad[:4])
+        return f"disallowed_chars:{codes}"
+
+    if len(normalized) < LESSON_MIN_LENGTH:
+        return "too_short"
+    if len(normalized) > LESSON_MAX_LENGTH:
+        return "too_long"
+
+    words = [w for w in normalized.split(" ") if w]
+    if len(words) < LESSON_MIN_WORDS:
+        return "too_few_words"
+    if len(words) > LESSON_MAX_WORDS:
+        return "too_many_words"
+
+    if not has_persian(normalized):
+        return "not_persian"
+    return None
+
+
+def is_valid_lesson(lesson: str) -> bool:
+    return validate_lesson(lesson) is None
+
+
+def lesson_key(lesson: str) -> str:
+    """Stable id for a lesson: normalized, lowercased, punctuation-stripped.
+
+    Re-learning the same advice with different wording noise therefore bumps
+    ``support`` on the existing row instead of creating a near-duplicate.
+    """
+    normalized = normalize_lesson(lesson).lower().replace(ZWNJ, "")
+    stripped = "".join(
+        " " if (ch in _ALLOWED_PUNCT or ch in _LESSON_PUNCT) else ch
+        for ch in normalized
+    )
+    canonical = _WHITESPACE_RE.sub(" ", stripped).strip()
+    return hashlib.sha1(canonical.encode("utf-8")).hexdigest()[:16]
 
 
 def filter_queries(

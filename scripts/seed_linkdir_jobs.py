@@ -92,6 +92,44 @@ def _generate_ai_queries(
     return list(result.queries), result.summary()
 
 
+def _record_ai_episodes(
+    queries: list[str], *, query_set: str, meta: dict
+) -> int:
+    """Write one episode per generated query. Never raises, never fails the run.
+
+    This is the storage half of the agent's experience loop: the outcome is
+    unknown now and gets attached later by scripts/score_agent_memory.py.
+    """
+    if not queries:
+        return 0
+    try:
+        from app.agent_memory import AgentMemory
+        from experiments.linkdir_finders.ai_queries import MEMORY_AGENT
+        from experiments.linkdir_finders.job_queue import query_key
+
+        memory = AgentMemory(MEMORY_AGENT)
+        if not memory.available():
+            return 0
+        written = memory.record_episodes(
+            {
+                "subject": query,
+                "subject_key": query_key(query),
+                "kind": "query",
+                "query_set": query_set,
+                "source": "ai_agent",
+                "meta": meta,
+            }
+            for query in queries
+        )
+        return int(written.get("inserted") or 0)
+    except Exception as exc:  # noqa: BLE001 - memory is strictly additive
+        print(
+            f"::warning::agent memory write failed for {query_set}: {exc}",
+            file=sys.stderr,
+        )
+        return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Seed linkdir search jobs to D1 queue")
     parser.add_argument(
@@ -187,7 +225,8 @@ def main() -> int:
         ai_queries, ai_summary = _generate_ai_queries(
             cfg, shard=shard, count=ai_count, known=queries
         )
-        ai_summaries.append({"query_set": shard, **ai_summary})
+        ai_entry = {"query_set": shard, **ai_summary}
+        ai_summaries.append(ai_entry)
         if not ai_queries:
             continue
         ai_counts = _enqueue_list(
@@ -199,6 +238,16 @@ def main() -> int:
             source="ai_agent",
         )
         shard_summaries.append({"query_set": shard, "source": "ai_agent", **ai_counts})
+        if not args.dry_run:
+            ai_entry["episodes"] = _record_ai_episodes(
+                ai_queries,
+                query_set=shard,
+                meta={
+                    "model": ai_summary.get("model"),
+                    "account": ai_summary.get("account"),
+                    "priority": priority,
+                },
+            )
 
     summary = {
         "query_set": args.query_set,

@@ -1,25 +1,36 @@
 """AI-generated Telegram search queries for the linkdir finder pipeline.
 
-Wraps the reusable Cloudflare AI agent runtime with catalog feedback tools and
-the strict query validator. The public entrypoint :func:`generate_queries`
-never raises: when accounts are exhausted, the bridge is down or the model
-returns junk, it comes back with ``ok=False`` and an empty query list so the
-caller can fall through to the static config queries.
+Wraps the reusable Cloudflare AI agent runtime with catalog feedback tools,
+recall of previously distilled lessons, and the strict query validator. The
+public entrypoint :func:`generate_queries` never raises: when accounts are
+exhausted, the bridge is down or the model returns junk, it comes back with
+``ok=False`` and an empty query list so the caller can fall through to the
+static config queries.
+
+Recall is the read end of the experience-memory loop
+(:mod:`experiments.linkdir_finders.reflection` writes the lessons). When no
+lessons exist — including whenever the bridge is unavailable — the prompt and
+the tool set are byte-for-byte what they were before memory existed.
 """
 
 from __future__ import annotations
 
-import json
 import logging
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
 from experiments.linkdir_finders.query_validator import dedupe_key, filter_queries
+from experiments.linkdir_finders.reward import row_queries
 
 logger = logging.getLogger("linkdir_finders.ai_queries")
 
+MEMORY_AGENT = "linkdir_query"
+
 TOOL_ITEM_CAP = 15
+LESSON_PROMPT_LIMIT = 5
+LESSON_FETCH_LIMIT = 20
+LESSON_CHARS = 160
 _CATALOG_SCAN_LIMIT = 200
 _TITLE_CHARS = 60
 
@@ -55,7 +66,11 @@ Hard rules for every query you output:
 - Do not repeat queries that already exist.
 
 Call the provided tools first to learn which query patterns produced good and \
-bad results, then answer with the JSON object required by the schema."""
+bad results, then answer with the JSON object required by the schema.
+
+If the prompt or recall_lessons tool lists DO/AVOID lessons, treat them as \
+hard constraints from earlier scored runs and from the admin — obey them when \
+proposing new queries."""
 
 
 @dataclass
@@ -84,22 +99,6 @@ def ai_config(cfg: dict[str, Any] | None) -> dict[str, Any]:
     return dict(section) if isinstance(section, dict) else {}
 
 
-def _row_queries(row: dict[str, Any]) -> list[str]:
-    out: list[str] = []
-    single = row.get("query")
-    if isinstance(single, str) and single.strip():
-        out.append(single.strip())
-    many = row.get("queries")
-    if isinstance(many, str):
-        try:
-            many = json.loads(many)
-        except (json.JSONDecodeError, ValueError):
-            many = []
-    if isinstance(many, list):
-        out.extend(str(q).strip() for q in many if str(q).strip())
-    return out
-
-
 def _verdict_counter(catalog: Any, verdict: str) -> Counter[str]:
     counter: Counter[str] = Counter()
     try:
@@ -110,7 +109,7 @@ def _verdict_counter(catalog: Any, verdict: str) -> Counter[str]:
     for row in rows:
         if not isinstance(row, dict):
             continue
-        for query in _row_queries(row):
+        for query in row_queries(row):
             counter[query] += 1
     return counter
 
@@ -177,7 +176,72 @@ def collect_feedback(
     )
 
 
-def build_tools(feedback: _Feedback, *, enable_web_search: bool) -> list[Any]:
+@dataclass
+class _Lessons:
+    """Distilled experience recalled from agent memory."""
+
+    do: list[str] = field(default_factory=list)
+    avoid: list[str] = field(default_factory=list)
+
+    def injected(self) -> int:
+        return len(self.do[:LESSON_PROMPT_LIMIT]) + len(self.avoid[:LESSON_PROMPT_LIMIT])
+
+    def total(self) -> int:
+        return len(self.do) + len(self.avoid)
+
+
+def collect_lessons(memory: Any, *, limit: int = LESSON_FETCH_LIMIT) -> _Lessons:
+    """Read active lessons. Any failure yields an empty, harmless result."""
+    if memory is None:
+        return _Lessons()
+    try:
+        if not memory.available():
+            return _Lessons()
+        rows = memory.lessons(limit=limit) or []
+    except Exception as exc:  # noqa: BLE001 - memory is advisory only
+        logger.warning("lesson recall failed: %s", exc)
+        return _Lessons()
+
+    lessons = _Lessons()
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        text = str(row.get("lesson") or "").strip()[:LESSON_CHARS]
+        if not text:
+            continue
+        if str(row.get("kind") or "do").strip().lower() == "avoid":
+            lessons.avoid.append(text)
+        else:
+            lessons.do.append(text)
+    return lessons
+
+
+def build_system_prompt(lessons: _Lessons | None) -> str:
+    """Prepend recalled lessons to the base prompt, grouped by kind."""
+    if lessons is None or not lessons.injected():
+        return SYSTEM_PROMPT
+
+    parts = [
+        SYSTEM_PROMPT,
+        "",
+        "Lessons learned from earlier scored runs. Apply them:",
+    ]
+    if lessons.do:
+        parts.append("DO:")
+        parts.extend(f"- {text}" for text in lessons.do[:LESSON_PROMPT_LIMIT])
+    if lessons.avoid:
+        parts.append("AVOID:")
+        parts.extend(f"- {text}" for text in lessons.avoid[:LESSON_PROMPT_LIMIT])
+    parts.append("Call recall_lessons if you want the rest of them.")
+    return "\n".join(parts)
+
+
+def build_tools(
+    feedback: _Feedback,
+    *,
+    enable_web_search: bool,
+    lessons: _Lessons | None = None,
+) -> list[Any]:
     from app.cloudflare_ai.agent import AgentTool
 
     no_args: dict[str, Any] = {"type": "object", "properties": {}}
@@ -203,6 +267,28 @@ def build_tools(feedback: _Feedback, *, enable_web_search: bool) -> list[Any]:
         ),
     ]
 
+    if lessons is not None and lessons.total():
+        tools.append(
+            AgentTool(
+                name="recall_lessons",
+                description=(
+                    "Lessons distilled from earlier scored runs. Optional 'kind' "
+                    "filter: 'do' or 'avoid'."
+                ),
+                parameters={
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": ["do", "avoid"],
+                            "description": "Restrict to one lesson kind",
+                        }
+                    },
+                },
+                handler=lambda args: _recall(lessons, args),
+            )
+        )
+
     if enable_web_search:
         from experiments.linkdir_finders.web_search import web_search
 
@@ -224,6 +310,16 @@ def build_tools(feedback: _Feedback, *, enable_web_search: bool) -> list[Any]:
             )
         )
     return tools
+
+
+def _recall(lessons: _Lessons, args: dict[str, Any]) -> list[dict[str, str]]:
+    kind = str((args or {}).get("kind") or "").strip().lower()
+    rows: list[dict[str, str]] = []
+    if kind != "avoid":
+        rows.extend({"kind": "do", "lesson": text} for text in lessons.do)
+    if kind != "do":
+        rows.extend({"kind": "avoid", "lesson": text} for text in lessons.avoid)
+    return rows[:TOOL_ITEM_CAP]
 
 
 def _user_prompt(count: int, query_set: str, feedback: _Feedback) -> str:
@@ -268,8 +364,10 @@ def generate_queries(
     *,
     provider: Any = None,
     catalog: Any = None,
+    memory: Any = None,
     static_queries: list[str] | None = None,
     enable_web_search: bool | None = None,
+    enable_memory: bool | None = None,
     model: str | None = None,
     max_tool_rounds: int | None = None,
 ) -> QueryGenResult:
@@ -278,6 +376,9 @@ def generate_queries(
     shard = (query_set or "fa").strip().lower() or "fa"
     want = max(1, int(count))
     use_web = bool(settings.get("web_search", False) if enable_web_search is None else enable_web_search)
+    use_memory = bool(
+        settings.get("memory", True) if enable_memory is None else enable_memory
+    )
     rounds = int(max_tool_rounds if max_tool_rounds is not None else settings.get("max_tool_rounds") or 4)
 
     try:
@@ -306,8 +407,14 @@ def generate_queries(
 
             static_queries = queries_for_set(cfg or {}, shard)
 
+        if memory is None and use_memory:
+            from app.agent_memory import AgentMemory
+
+            memory = AgentMemory(MEMORY_AGENT)
+
         feedback = collect_feedback(catalog, static_queries=list(static_queries))
-        tools = build_tools(feedback, enable_web_search=use_web)
+        lessons = collect_lessons(memory) if use_memory else _Lessons()
+        tools = build_tools(feedback, enable_web_search=use_web, lessons=lessons)
     except Exception as exc:  # noqa: BLE001 - setup must not break the pipeline
         logger.warning("AI query generation setup failed: %s", exc)
         return QueryGenResult(ok=False, reason="setup_failed", diagnostics={"error": str(exc)[:200]})
@@ -316,7 +423,7 @@ def generate_queries(
 
     agent = Agent(
         provider,
-        system_prompt=SYSTEM_PROMPT,
+        system_prompt=build_system_prompt(lessons),
         tools=tools,
         max_tool_rounds=rounds,
         response_schema=RESPONSE_SCHEMA,
@@ -324,6 +431,7 @@ def generate_queries(
     )
     result = agent.run(_user_prompt(want, shard, feedback))
     diagnostics: dict[str, Any] = result.diagnostics()
+    diagnostics["lessons_used"] = lessons.injected()
     if use_web:
         from experiments.linkdir_finders.web_search import backend_name
 
