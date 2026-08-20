@@ -14,7 +14,7 @@
     },
     "promo_spread": {
       "enabled": true,
-      "dry_run": true,
+      "dry_run": false,
       "paused": false,
       "mode": "forward",
       "auto_join": true,
