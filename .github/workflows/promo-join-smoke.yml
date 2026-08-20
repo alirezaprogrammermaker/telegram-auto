@@ -1,0 +1,126 @@
+name: promo-join-smoke
+
+on:
+  workflow_dispatch:
+    inputs:
+      account_id:
+        description: "promo account id"
+        required: true
+        default: "promo2"
+        type: choice
+        options:
+          - promo2
+          - promo1
+          - promo
+      source:
+        description: "Ad channel username"
+        required: true
+        default: "@aads_posts"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        run: |
+          set -euo pipefail
+          rm -rf ./* ./.[!.]* 2>/dev/null || true
+          git clone --depth 1 --branch master \
+            "https://github.com/${GITHUB_REPOSITORY}.git" repo
+          shopt -s dotglob
+          mv repo/* .
+          rm -rf repo
+
+      - name: Install deps
+        run: |
+          python3 -m pip install --upgrade --quiet pip
+          python3 -m pip install --quiet -r requirements.txt
+
+      - name: Resolve session secret name
+        id: acc
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          acc = os.environ["ACCOUNT_ID"].strip()
+          rows = json.loads(Path("config/accounts.json").read_text(encoding="utf-8"))["accounts"]
+          row = next(r for r in rows if r.get("id") == acc)
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a", encoding="utf-8") as fh:
+              fh.write(f"session_name={row['session_name']}\n")
+              fh.write(f"session_secret={row['session_secret']}\n")
+          print(row["session_secret"])
+          PY
+
+      - name: Prepare session
+        id: prep
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          SESSION_NAME: ${{ steps.acc.outputs.session_name }}
+          TELEGRAM_SESSION_B64_PROMO2: ${{ secrets.TELEGRAM_SESSION_B64_PROMO2 }}
+          TELEGRAM_SESSION_B64_PROMO1: ${{ secrets.TELEGRAM_SESSION_B64_PROMO1 }}
+          TELEGRAM_SESSION_B64_PROMO: ${{ secrets.TELEGRAM_SESSION_B64_PROMO }}
+          DATA_DIR: data/${{ inputs.account_id }}
+        run: |
+          set -euo pipefail
+          case "${ACCOUNT_ID}" in
+            promo2) export TELEGRAM_SESSION_B64="${TELEGRAM_SESSION_B64_PROMO2:-}" ;;
+            promo1) export TELEGRAM_SESSION_B64="${TELEGRAM_SESSION_B64_PROMO1:-}" ;;
+            promo) export TELEGRAM_SESSION_B64="${TELEGRAM_SESSION_B64_PROMO:-}" ;;
+            *) echo "unknown account"; exit 1 ;;
+          esac
+          python3 scripts/prepare_gha_session.py
+
+      - name: Load first route groups
+        id: groups
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          SOURCE: ${{ inputs.source }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          acc = os.environ["ACCOUNT_ID"]
+          source = os.environ["SOURCE"].strip()
+          profile = json.loads(Path(f"config/accounts/{acc}.json").read_text(encoding="utf-8"))
+          routes = (((profile.get("modules") or {}).get("promo_spread") or {}).get("routes") or [])
+          groups = []
+          for r in routes:
+              if str(r.get("source") or "") == source or str(r.get("source") or "").lower() == source.lower():
+                  groups = list(r.get("groups") or [])[:3]
+                  break
+          if not groups and routes:
+              groups = list(routes[0].get("groups") or [])[:3]
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a", encoding="utf-8") as fh:
+              fh.write("groups<<EOF\n")
+              fh.write("\n".join(groups))
+              fh.write("\nEOF\n")
+          print("groups:", groups)
+          PY
+
+      - name: Join smoke
+        if: steps.prep.outputs.skip != 'true'
+        env:
+          ACCOUNT_ID: ${{ inputs.account_id }}
+          SESSION_NAME: ${{ steps.acc.outputs.session_name }}
+          DATA_DIR: data/${{ inputs.account_id }}
+          API_ID: ${{ secrets.API_ID }}
+          API_HASH: ${{ secrets.API_HASH }}
+          SOURCE: ${{ inputs.source }}
+          GROUPS: ${{ steps.groups.outputs.groups }}
+        run: |
+          set -euo pipefail
+          args=(--source "$SOURCE")
+          while IFS= read -r g; do
+            [ -n "$g" ] || continue
+            args+=(--group "$g")
+          done <<< "$GROUPS"
+          python3 scripts/promo_join_smoke.py "${args[@]}"
