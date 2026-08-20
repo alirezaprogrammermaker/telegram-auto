@@ -63,6 +63,41 @@ def _promo_circuit() -> dict[str, Any]:
     }
 
 
+def _promo_schedule() -> dict[str, Any]:
+    """Whether promo worker would send right now (quiet hours / circuit)."""
+    try:
+        from modules.promo_spread.safety import SafetyConfig, SafetyGuard
+
+        runtime = load_json(data_path("modules.runtime.json"), {})
+        promo_cfg = {}
+        if isinstance(runtime, dict):
+            promo_cfg = runtime.get("promo_spread") or {}
+        if not isinstance(promo_cfg, dict):
+            promo_cfg = {}
+        safety_raw = promo_cfg.get("safety") if isinstance(promo_cfg.get("safety"), dict) else {}
+        cfg = SafetyConfig.from_dict(safety_raw)
+        guard = SafetyGuard(cfg)
+        active, why = guard.is_active_now()
+        ok_b, why_b = guard.budget_ok()
+        return {
+            "active_now": bool(active),
+            "reason": "" if active else str(why or ""),
+            "budget_ok": bool(ok_b),
+            "budget_reason": "" if ok_b else str(why_b or ""),
+            "timezone": cfg.timezone,
+            "windows": list(cfg.active_windows or []),
+        }
+    except Exception:
+        return {
+            "active_now": None,
+            "reason": "",
+            "budget_ok": None,
+            "budget_reason": "",
+            "timezone": "",
+            "windows": [],
+        }
+
+
 def collect_runtime_metrics() -> dict[str, Any]:
     """Snapshot for heartbeat meta_json.metrics."""
     return {
@@ -70,4 +105,5 @@ def collect_runtime_metrics() -> dict[str, Any]:
         "forward_queue_pending": _forward_queue_pending(),
         "promo_queue_pending": _promo_queue_pending(),
         "promo_circuit": _promo_circuit(),
+        "promo_schedule": _promo_schedule(),
     }
