@@ -68,6 +68,12 @@ def _write_github_env(key: str, value: str) -> None:
     out = os.environ.get("GITHUB_ENV")
     if not out:
         return
+    # Prevent Actions from echoing secrets in step env dumps.
+    if value:
+        print(f"::add-mask::{value}")
+        for part in value.split():
+            if len(part) >= 8:
+                print(f"::add-mask::{part}")
     with open(out, "a", encoding="utf-8") as fh:
         fh.write(f"{key}<<EOF\n{value}\nEOF\n")
 
