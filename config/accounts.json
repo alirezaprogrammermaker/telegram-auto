@@ -125,6 +125,15 @@
       "session_name": "promo2",
       "session_secret": "TELEGRAM_SESSION_B64_PROMO2",
       "profile": "config/accounts/promo2.json"
+    },
+    {
+      "id": "forwarder1",
+      "label": "forwarder1 (forward)",
+      "enabled": false,
+      "workflow": "run-account-forwarder1.yml",
+      "session_name": "forwarder1",
+      "session_secret": "TELEGRAM_SESSION_B64_FORWARDER1",
+      "profile": "config/accounts/forwarder1.json"
     }
   ]
 }
