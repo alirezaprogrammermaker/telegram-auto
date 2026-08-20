@@ -1,0 +1,34 @@
+# Auto-scaffolded by admin-bot / scripts/scaffold_account.py
+# Session secret: TELEGRAM_SESSION_B64_PROMO3
+# Profile: config/accounts/promo3.json
+
+name: run-account-promo3
+
+on:
+  schedule:
+    - cron: "8 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      max_runtime_seconds:
+        description: "Seconds to run before clean exit (default 5h55m)"
+        required: false
+        default: "21300"
+
+permissions:
+  contents: read
+
+jobs:
+  promo3:
+    uses: ./.github/workflows/run-account.yml
+    with:
+      account_id: promo3
+      session_name: promo3
+      max_runtime_seconds: ${{ inputs.max_runtime_seconds || '21300' }}
+    secrets:
+      API_ID: ${{ secrets.API_ID }}
+      API_HASH: ${{ secrets.API_HASH }}
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      TELEGRAM_SESSION_B64: ${{ secrets.TELEGRAM_SESSION_B64_PROMO3 }}
+      ADMIN_IDS: ${{ secrets.ADMIN_IDS }}
+      ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+      ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
