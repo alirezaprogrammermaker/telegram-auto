@@ -138,7 +138,7 @@
     {
       "id": "promo3",
       "label": "promo3 (promo)",
-      "enabled": false,
+      "enabled": true,
       "workflow": "run-account-promo3.yml",
       "session_name": "promo3",
       "session_secret": "TELEGRAM_SESSION_B64_PROMO3",
