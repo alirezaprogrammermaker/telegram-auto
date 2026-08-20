@@ -36,6 +36,10 @@ on:
         required: false
       ADMIN_IDS:
         required: false
+      ADMIN_BOT_BRIDGE_URL:
+        required: false
+      ADMIN_BOT_BRIDGE_TOKEN:
+        required: false
 
 permissions:
   contents: read

@@ -168,6 +168,8 @@ jobs:
       ADMIN_PASSWORD: ${{{{ secrets.ADMIN_PASSWORD }}}}
       TELEGRAM_SESSION_B64: ${{{{ secrets.{secret} }}}}
       ADMIN_IDS: ${{{{ secrets.ADMIN_IDS }}}}
+      ADMIN_BOT_BRIDGE_URL: ${{{{ secrets.ADMIN_BOT_BRIDGE_URL }}}}
+      ADMIN_BOT_BRIDGE_TOKEN: ${{{{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}}}
 """
 
 
