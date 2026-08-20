@@ -89,6 +89,15 @@
       "session_name": "linkdir3",
       "session_secret": "TELEGRAM_SESSION_B64_LINKDIR3",
       "profile": "config/accounts/linkdir3.json"
+    },
+    {
+      "id": "linkdir4",
+      "label": "linkdir4 (linkdir)",
+      "enabled": false,
+      "workflow": "run-linkdir-linkdir4.yml",
+      "session_name": "linkdir4",
+      "session_secret": "TELEGRAM_SESSION_B64_LINKDIR4",
+      "profile": "config/accounts/linkdir4.json"
     }
   ]
 }
