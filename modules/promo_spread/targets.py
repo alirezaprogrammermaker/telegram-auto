@@ -149,8 +149,25 @@ async def ensure_promo_group(
         me = await client.get_me()
         try:
             await client(GetParticipantRequest(entity, me))
-        except UserNotParticipantError as exc:
-            raise ValueError(f"عضو {label} نیستی — لینک دعوت معتبر بده یا دستی جوین شو") from exc
+        except UserNotParticipantError:
+            if not auto_join:
+                raise ValueError(
+                    f"عضو {label} نیستی و auto_join خاموش است"
+                ) from None
+            if not getattr(entity, "username", None):
+                raise ValueError(
+                    f"عضو {label} نیستی — لینک دعوت معتبر بده یا دستی جوین شو"
+                ) from None
+            try:
+                await client(JoinChannelRequest(entity))
+            except UserAlreadyParticipantError:
+                pass
+            except FloodWaitError:
+                raise
+            except RPCError as exc:
+                raise ValueError(
+                    f"جوین {label} ناموفق: {exc.__class__.__name__}"
+                ) from exc
         except RPCError as exc:
             raise ValueError(f"بررسی عضویت {label} شکست: {exc.__class__.__name__}") from exc
         return entity, label, int(entity.id)
