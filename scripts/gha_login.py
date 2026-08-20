@@ -29,6 +29,7 @@ from telethon.sessions import StringSession  # noqa: E402
 
 from app.client import build_client  # noqa: E402
 from app.config import load_app_config  # noqa: E402
+from app.login_errors import format_flood_wait_error, report_login_result  # noqa: E402
 from app.paths import ensure_data_dir  # noqa: E402
 
 
@@ -100,6 +101,7 @@ async def cmd_send(phone: str) -> dict:
         }
     except FloodWaitError as exc:
         wait = int(getattr(exc, "seconds", 0) or 0)
+        error = format_flood_wait_error(wait)
         hours, rem = divmod(wait, 3600)
         minutes = rem // 60
         wait_label = f"{hours}h {minutes}m" if hours else f"{minutes}m"
@@ -110,8 +112,9 @@ async def cmd_send(phone: str) -> dict:
         )
         return {
             "status": "failed",
-            "error": f"flood_wait:{wait}",
+            "error": error,
             "wait_seconds": wait,
+            "action": "send",
             "hint": f"Wait ~{wait_label} before requesting another code for this number",
         }
     finally:
@@ -157,6 +160,14 @@ async def cmd_complete(code: str, password: str | None) -> dict:
             return {"status": "failed", "error": "Invalid login code"}
         except PhoneCodeExpiredError:
             return {"status": "failed", "error": "Code expired — run action=send again"}
+        except FloodWaitError as exc:
+            wait = int(getattr(exc, "seconds", 0) or 0)
+            return {
+                "status": "failed",
+                "error": format_flood_wait_error(wait),
+                "wait_seconds": wait,
+                "action": "complete",
+            }
 
         me = await tg.get_me()
         pending_path.unlink(missing_ok=True)
@@ -231,6 +242,7 @@ def main() -> int:
             return 1
         result = asyncio.run(cmd_send(phone))
         print(json.dumps(result, ensure_ascii=False))
+        _notify_bridge(result, action="send")
         return 0 if result.get("status") in {"code_sent", "already_authorized"} else 1
 
     if args.action == "complete":
@@ -245,6 +257,7 @@ def main() -> int:
         result = asyncio.run(cmd_complete(code, password))
         print(json.dumps(result, ensure_ascii=False))
         if result.get("status") not in {"logged_in", "already_authorized"}:
+            _notify_bridge(result, action="complete")
             return 1
         # Immediately export session to the account secret (same runner IP)
         exported = cmd_export_secret(args.secret_name)
@@ -257,6 +270,21 @@ def main() -> int:
         return 0 if result.get("status") == "secret_set" else 1
 
     return 2
+
+
+def _notify_bridge(result: dict, *, action: str) -> None:
+    if not (os.environ.get("ADMIN_BOT_BRIDGE_URL") or "").strip():
+        fallback = (os.environ.get("ADMIN_BOT_BRIDGE_URL_VAR") or "").strip()
+        os.environ["ADMIN_BOT_BRIDGE_URL"] = (
+            fallback or "https://telegram-admin-bot.social-panel.workers.dev"
+        )
+    if not (os.environ.get("ADMIN_BOT_BRIDGE_TOKEN") or "").strip():
+        token = (os.environ.get("ADMIN_BOT_BRIDGE_TOKEN_VAR") or "").strip()
+        if token:
+            os.environ["ADMIN_BOT_BRIDGE_TOKEN"] = token
+    payload = dict(result)
+    payload.setdefault("action", action)
+    report_login_result(os.environ.get("ACCOUNT_ID") or "", payload)
 
 
 if __name__ == "__main__":

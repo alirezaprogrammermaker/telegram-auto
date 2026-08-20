@@ -24,6 +24,7 @@ CAPABILITIES.md
 tests/*
 !tests/test_cloudflare_ai*.py
 !tests/test_linkdir*.py
+!tests/test_login*.py
 !tests/__init__.py
 .playwright-mcp/
 .wrangler/

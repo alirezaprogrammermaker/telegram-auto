@@ -180,6 +180,10 @@ jobs:
           DATA_DIR: data/${{ inputs.account_id }}
           API_ID: ${{ secrets.API_ID }}
           API_HASH: ${{ secrets.API_HASH }}
+          ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          ADMIN_BOT_BRIDGE_URL_VAR: ${{ vars.ADMIN_BOT_BRIDGE_URL }}
+          ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+          ADMIN_BOT_BRIDGE_TOKEN_VAR: ${{ vars.ADMIN_BOT_BRIDGE_TOKEN }}
           LOGIN_PHONE: ${{ steps.creds.outputs.phone }}
           PHONE: ${{ steps.creds.outputs.phone }}
         run: |
@@ -248,6 +252,10 @@ jobs:
           API_HASH: ${{ secrets.API_HASH }}
           LOGIN_OTP: ${{ steps.creds.outputs.otp }}
           LOGIN_2FA: ${{ steps.creds.outputs.twofa }}
+          ADMIN_BOT_BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          ADMIN_BOT_BRIDGE_URL_VAR: ${{ vars.ADMIN_BOT_BRIDGE_URL }}
+          ADMIN_BOT_BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+          ADMIN_BOT_BRIDGE_TOKEN_VAR: ${{ vars.ADMIN_BOT_BRIDGE_TOKEN }}
           GH_TOKEN: ${{ secrets.REPO_SECRETS_TOKEN }}
           GITHUB_TOKEN: ${{ secrets.REPO_SECRETS_TOKEN }}
         run: |
