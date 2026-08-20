@@ -120,7 +120,7 @@
     {
       "id": "promo2",
       "label": "promo2 (promo)",
-      "enabled": false,
+      "enabled": true,
       "workflow": "run-account-promo2.yml",
       "session_name": "promo2",
       "session_secret": "TELEGRAM_SESSION_B64_PROMO2",
