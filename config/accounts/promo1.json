@@ -3,18 +3,38 @@
   "label": "Promo worker 1",
   "session_name": "promo1",
   "modules": {
-    "auto_reply": { "enabled": true },
-    "channel_forward": { "enabled": false },
-    "digest": { "enabled": false },
+    "auto_reply": {
+      "enabled": true
+    },
+    "channel_forward": {
+      "enabled": false
+    },
+    "digest": {
+      "enabled": false
+    },
     "promo_spread": {
       "enabled": true,
       "dry_run": true,
       "paused": false,
       "mode": "forward",
       "auto_join": true,
-      "routes": []
+      "routes": [
+        {
+          "source": "@aads_posts",
+          "groups": [],
+          "enabled": true,
+          "paused": false,
+          "mode": "forward"
+        }
+      ],
+      "source": null,
+      "groups": []
     },
-    "link_harvest": { "enabled": false },
-    "group_inspect": { "enabled": false }
+    "link_harvest": {
+      "enabled": false
+    },
+    "group_inspect": {
+      "enabled": false
+    }
   }
 }
