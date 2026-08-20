@@ -17,6 +17,8 @@ from telethon.errors import (
     SlowModeWaitError,
     UserBannedInChannelError,
 )
+from telethon.tl import types as tl_types
+from telethon.tl.functions.messages import SendReactionRequest
 from telethon.tl.types import Message
 
 from app.base import BaseModule
@@ -28,6 +30,8 @@ from modules.promo_spread.safety import SafetyConfig, SafetyGuard
 from modules.promo_spread.targets import ensure_promo_group, ensure_source_channel
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_ACK_REACTION = "👍"
 
 
 @dataclass
@@ -57,6 +61,11 @@ class PromoSpreadModule(BaseModule):
         self.safety_cfg = SafetyConfig.from_dict(config.get("safety"))
         self.guard = SafetyGuard(self.safety_cfg)
         self.queue = PromoQueue()
+        raw_ack = config.get("ack_reaction", DEFAULT_ACK_REACTION)
+        if raw_ack is False or raw_ack is None:
+            self.ack_reaction = ""
+        else:
+            self.ack_reaction = str(raw_ack).strip() or DEFAULT_ACK_REACTION
 
         self._routes_by_source: dict[int, ResolvedPromoRoute] = {}
         self._group_entities: dict[int, Any] = {}  # group_id -> entity
@@ -331,11 +340,13 @@ class PromoSpreadModule(BaseModule):
                 self._group_entities[group_id] = entity
             except Exception as exc:
                 self.queue.mark_failed(item_id, str(exc), retry=False)
+                await self._maybe_ack_source_post(item)
                 return
 
         source_entity = self._source_entity_for(source_id)
         if source_entity is None:
             self.queue.mark_failed(item_id, "source route gone", retry=False)
+            await self._maybe_ack_source_post(item)
             return
 
         if self.dry_run:
@@ -348,6 +359,7 @@ class PromoSpreadModule(BaseModule):
             )
             self.guard.note_success(group_ref)
             self.queue.mark_done(item_id)
+            await self._maybe_ack_source_post(item)
             return
 
         try:
@@ -368,6 +380,7 @@ class PromoSpreadModule(BaseModule):
             msgs = [m for m in messages if isinstance(m, Message)]
             if not msgs:
                 self.queue.mark_failed(item_id, "source messages missing", retry=False)
+                await self._maybe_ack_source_post(item)
                 return
             msgs.sort(key=lambda m: m.id)
 
@@ -392,6 +405,7 @@ class PromoSpreadModule(BaseModule):
             self.guard.note_success(group_ref)
             self.queue.mark_done(item_id)
             logger.info("promo delivered ids=%s → %s", message_ids, group_ref)
+            await self._maybe_ack_source_post(item)
 
         except FloodWaitError as exc:
             self.guard.note_flood_wait(int(exc.seconds))
@@ -407,12 +421,52 @@ class PromoSpreadModule(BaseModule):
         except (ChatWriteForbiddenError, UserBannedInChannelError) as exc:
             self.queue.mark_failed(item_id, exc.__class__.__name__, retry=False)
             await self._alert(f"⚠️ نوشتن در `{group_ref}` ممنوع: {exc.__class__.__name__}")
+            await self._maybe_ack_source_post(item)
         except RPCError as exc:
             logger.exception("promo RPC fail → %s", group_ref)
             self.queue.mark_failed(item_id, exc.__class__.__name__, retry=True)
+            await self._maybe_ack_source_post(item)
         except Exception as exc:
             logger.exception("promo unexpected → %s", group_ref)
             self.queue.mark_failed(item_id, str(exc), retry=True)
+            await self._maybe_ack_source_post(item)
+
+    async def _maybe_ack_source_post(self, item: dict[str, Any]) -> None:
+        """React 👍 on the ad-channel post once every destination job has settled."""
+        if not self.ack_reaction:
+            return
+        post_key = str(item.get("post_key") or "")
+        if not self.queue.try_claim_post_ack(post_key):
+            return
+        source_id = int(item.get("source_id") or 0)
+        message_ids = [int(x) for x in (item.get("message_ids") or []) if str(x).lstrip("-").isdigit()]
+        if not source_id or not message_ids:
+            return
+        source_entity = self._source_entity_for(source_id)
+        if source_entity is None:
+            logger.warning("promo ack skipped: source gone for %s", post_key)
+            return
+        msg_id = min(message_ids)
+        try:
+            await self.client(
+                SendReactionRequest(
+                    peer=source_entity,
+                    msg_id=msg_id,
+                    reaction=[tl_types.ReactionEmoji(emoticon=self.ack_reaction)],
+                )
+            )
+            logger.info(
+                "promo ack reaction %s on source msg %s (%s)",
+                self.ack_reaction,
+                msg_id,
+                post_key,
+            )
+        except Exception as exc:
+            logger.warning(
+                "promo ack reaction failed for %s: %s",
+                post_key,
+                exc.__class__.__name__,
+            )
 
     async def _alert(self, text: str) -> None:
         import os
