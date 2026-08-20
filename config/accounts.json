@@ -93,7 +93,7 @@
     {
       "id": "linkdir4",
       "label": "linkdir4 (linkdir)",
-      "enabled": false,
+      "enabled": true,
       "workflow": "run-linkdir-linkdir4.yml",
       "session_name": "linkdir4",
       "session_secret": "TELEGRAM_SESSION_B64_LINKDIR4",
