@@ -25,6 +25,7 @@ from app.base import BaseModule
 from app.notify import notify_admins
 from modules.channel_forward.refs import display_ref
 from modules.promo_spread.queue import PromoQueue
+from modules.promo_spread.report import report_promo_delivery, report_promo_seen
 from modules.promo_spread.routes import migrate_routes
 from modules.promo_spread.safety import SafetyConfig, SafetyGuard
 from modules.promo_spread.targets import ensure_promo_group, ensure_source_channel
@@ -254,6 +255,7 @@ class PromoSpreadModule(BaseModule):
             random.shuffle(targets)
 
         created = 0
+        jobs: list[dict[str, Any]] = []
         for _entity, label, gid in targets:
             item_id = self.queue.enqueue(
                 source_id=route.source_id,
@@ -265,6 +267,14 @@ class PromoSpreadModule(BaseModule):
             )
             if item_id:
                 created += 1
+                jobs.append(
+                    {
+                        "job_id": item_id,
+                        "group_ref": label,
+                        "group_id": gid,
+                        "mode": route.mode,
+                    }
+                )
         logger.info(
             "promo enqueued %s (%s) → %s job(s)",
             post_key,
@@ -272,6 +282,14 @@ class PromoSpreadModule(BaseModule):
             created,
         )
         if created > 0:
+            report_promo_seen(
+                post_key=post_key,
+                source_ref=route.source_ref,
+                source_id=route.source_id,
+                message_ids=ids,
+                jobs=jobs,
+                mode=route.mode,
+            )
             await self._react_seen(route, ids, post_key)
 
     async def _react_seen(
@@ -346,6 +364,26 @@ class PromoSpreadModule(BaseModule):
                 return route.source_entity
         return None
 
+    def _report_item(
+        self,
+        item: dict[str, Any],
+        *,
+        status: str,
+        error: str | None = None,
+    ) -> None:
+        report_promo_delivery(
+            job_id=str(item.get("id") or ""),
+            post_key=str(item.get("post_key") or ""),
+            group_ref=str(item.get("group_ref") or ""),
+            status=status,
+            source_ref=None,
+            source_id=int(item["source_id"]) if item.get("source_id") is not None else None,
+            message_ids=[int(x) for x in (item.get("message_ids") or [])],
+            group_id=int(item["group_id"]) if item.get("group_id") is not None else None,
+            error=error,
+            mode=str(item.get("mode") or self.default_mode),
+        )
+
     async def _deliver_item(self, item: dict[str, Any]) -> None:
         item_id = str(item["id"])
         group_ref = str(item.get("group_ref"))
@@ -363,12 +401,14 @@ class PromoSpreadModule(BaseModule):
                 self._group_entities[group_id] = entity
             except Exception as exc:
                 self.queue.mark_failed(item_id, str(exc), retry=False)
+                self._report_item(item, status="failed", error=str(exc)[:300])
                 await self._maybe_ack_source_post(item)
                 return
 
         source_entity = self._source_entity_for(source_id)
         if source_entity is None:
             self.queue.mark_failed(item_id, "source route gone", retry=False)
+            self._report_item(item, status="failed", error="source route gone")
             await self._maybe_ack_source_post(item)
             return
 
@@ -382,6 +422,7 @@ class PromoSpreadModule(BaseModule):
             )
             self.guard.note_success(group_ref)
             self.queue.mark_done(item_id)
+            self._report_item(item, status="dry_run")
             await self._maybe_ack_source_post(item)
             return
 
@@ -403,6 +444,7 @@ class PromoSpreadModule(BaseModule):
             msgs = [m for m in messages if isinstance(m, Message)]
             if not msgs:
                 self.queue.mark_failed(item_id, "source messages missing", retry=False)
+                self._report_item(item, status="failed", error="source messages missing")
                 await self._maybe_ack_source_post(item)
                 return
             msgs.sort(key=lambda m: m.id)
@@ -428,30 +470,48 @@ class PromoSpreadModule(BaseModule):
             self.guard.note_success(group_ref)
             self.queue.mark_done(item_id)
             logger.info("promo delivered ids=%s → %s", message_ids, group_ref)
+            self._report_item(item, status="delivered")
             await self._maybe_ack_source_post(item)
 
         except FloodWaitError as exc:
             self.guard.note_flood_wait(int(exc.seconds))
             self.queue.defer(item_id, f"FloodWait {exc.seconds}s")
+            self._report_item(item, status="deferred", error=f"FloodWait {exc.seconds}s")
             await asyncio.sleep(int(exc.seconds) + random.randint(5, 20))
         except PeerFloodError:
             self.guard.note_peer_flood()
             self.queue.defer(item_id, "PeerFlood")
+            self._report_item(item, status="deferred", error="PeerFlood")
             await self._alert("⛔ PeerFlood — promo به‌صورت خودکار ۲۴ساعت متوقف شد")
         except SlowModeWaitError as exc:
             self.queue.defer(item_id, f"SlowMode {exc.seconds}s")
+            self._report_item(item, status="deferred", error=f"SlowMode {exc.seconds}s")
             await asyncio.sleep(int(exc.seconds) + 3)
         except (ChatWriteForbiddenError, UserBannedInChannelError) as exc:
             self.queue.mark_failed(item_id, exc.__class__.__name__, retry=False)
+            self._report_item(item, status="failed", error=exc.__class__.__name__)
             await self._alert(f"⚠️ نوشتن در `{group_ref}` ممنوع: {exc.__class__.__name__}")
             await self._maybe_ack_source_post(item)
         except RPCError as exc:
             logger.exception("promo RPC fail → %s", group_ref)
             self.queue.mark_failed(item_id, exc.__class__.__name__, retry=True)
+            # Only report failed when retries are exhausted (status flipped off pending).
+            pending_ids = {str(i.get("id")) for i in self.queue.list_pending()}
+            if item_id not in pending_ids:
+                self._report_item(item, status="failed", error=exc.__class__.__name__)
+            else:
+                self._report_item(
+                    item, status="deferred", error=f"retry:{exc.__class__.__name__}"
+                )
             await self._maybe_ack_source_post(item)
         except Exception as exc:
             logger.exception("promo unexpected → %s", group_ref)
             self.queue.mark_failed(item_id, str(exc), retry=True)
+            pending_ids = {str(i.get("id")) for i in self.queue.list_pending()}
+            if item_id not in pending_ids:
+                self._report_item(item, status="failed", error=str(exc)[:300])
+            else:
+                self._report_item(item, status="deferred", error=f"retry:{exc}"[:300])
             await self._maybe_ack_source_post(item)
 
     async def _maybe_ack_source_post(self, item: dict[str, Any]) -> None:
