@@ -24,7 +24,7 @@
     "linkdir_collect": {
       "enabled": true,
       "paused": false,
-      "steps": "search,snowball,rerank"
+      "steps": "snowball"
     }
   }
 }
