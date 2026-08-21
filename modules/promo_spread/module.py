@@ -95,15 +95,28 @@ class PromoSpreadModule(BaseModule):
             groups = raw.get("groups") or []
             if not source:
                 continue
-            if not groups:
-                logger.warning("promo route %s has no groups — skipped", source)
-                continue
+            # Always join/resolve the source first — even when groups are still
+            # empty (admin just registered the ad channel). Skipping here was
+            # why new promo accounts never auto-joined @source.
             try:
                 source_entity, src_label = await ensure_source_channel(
                     self.client, source, auto_join=self.auto_join
                 )
+                logger.info(
+                    "promo source ready %s (auto_join=%s groups=%s)",
+                    src_label,
+                    self.auto_join,
+                    len(groups),
+                )
             except Exception as exc:
                 logger.error("promo source skip %s: %s", source, exc)
+                continue
+
+            if not groups:
+                logger.warning(
+                    "promo route %s has no groups yet — source joined, waiting for groups",
+                    src_label,
+                )
                 continue
 
             resolved_groups: list[tuple[Any, str, int]] = []
