@@ -21,7 +21,15 @@
       "routes": [
         {
           "source": "@aads_posts",
-          "groups": [],
+          "groups": [
+            "@Links_international",
+            "@ShareTelegramInviteLinks",
+            "@LinkExchangeAcacia",
+            "@FreeAdsCenter",
+            "@tablight11223",
+            "@LincExchange1",
+            "@tabligatazadir"
+          ],
           "enabled": true,
           "paused": false,
           "mode": "forward"
