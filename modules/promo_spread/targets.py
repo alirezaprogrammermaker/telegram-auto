@@ -22,9 +22,16 @@ from telethon.tl.functions.channels import GetParticipantRequest, JoinChannelReq
 from telethon.tl.functions.messages import CheckChatInviteRequest, ImportChatInviteRequest
 from telethon.tl.types import Channel, Chat, ChatInvite, ChatInviteAlready
 
+from app.metrics_catalog import Promo
+from app.telemetry import incr
 from modules.channel_forward.refs import display_ref, invite_hash, normalize_ref
 
 logger = logging.getLogger(__name__)
+
+
+def _note_join(ok: bool) -> None:
+    """Count real membership changes only — already-a-member is not a join."""
+    incr(Promo.JOIN_OK if ok else Promo.JOIN_FAILED)
 
 
 def _stable_label(entity: Any, fallback: Any) -> str:
@@ -51,14 +58,18 @@ async def _resolve_invite(client: TelegramClient, ref: Any, *, auto_join: bool =
             updates = await client(ImportChatInviteRequest(inv))
             chats = getattr(updates, "chats", None) or []
             if chats:
+                _note_join(True)
                 return chats[0]
         except UserAlreadyParticipantError:
             pass
         except (InviteHashInvalidError, InviteHashExpiredError) as exc:
+            _note_join(False)
             raise ValueError(f"لینک دعوت نامعتبر/منقضی است: `{display_ref(ref)}`") from exc
         except FloodWaitError:
+            _note_join(False)
             raise
         except RPCError as exc:
+            _note_join(False)
             logger.debug("ImportChatInvite soft-fail: %s", exc.__class__.__name__)
 
     try:
@@ -81,10 +92,12 @@ async def _resolve_invite(client: TelegramClient, ref: Any, *, auto_join: bool =
             updates = await client(ImportChatInviteRequest(inv))
             chats = getattr(updates, "chats", None) or []
             if chats:
+                _note_join(True)
                 return chats[0]
         except UserAlreadyParticipantError:
             pass
         except RPCError as exc:
+            _note_join(False)
             raise ValueError(
                 f"جوین با لینک دعوت ناموفق: {exc.__class__.__name__}"
             ) from exc
@@ -120,9 +133,11 @@ async def ensure_source_channel(
         if getattr(entity, "username", None):
             try:
                 await client(JoinChannelRequest(entity))
+                _note_join(True)
             except UserAlreadyParticipantError:
                 pass
             except RPCError as exc:
+                _note_join(False)
                 raise ValueError(f"عضو کانال منبع نیستی ({exc.__class__.__name__})") from exc
         else:
             raise ValueError("عضو کانال منبع نیستی — لینک دعوت بده") from None
@@ -160,11 +175,14 @@ async def ensure_promo_group(
                 ) from None
             try:
                 await client(JoinChannelRequest(entity))
+                _note_join(True)
             except UserAlreadyParticipantError:
                 pass
             except FloodWaitError:
+                _note_join(False)
                 raise
             except RPCError as exc:
+                _note_join(False)
                 raise ValueError(
                     f"جوین {label} ناموفق: {exc.__class__.__name__}"
                 ) from exc

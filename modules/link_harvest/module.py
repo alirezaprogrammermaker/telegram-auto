@@ -10,7 +10,9 @@ from telethon import TelegramClient, events
 from telethon.tl.types import Message
 
 from app.base import BaseModule
+from app.metrics_catalog import Discovery
 from app.paths import account_id, data_path, ensure_data_dir
+from app.telemetry import incr
 from modules.channel_forward.refs import display_ref, ensure_joined
 from modules.group_pool.pool import GroupPool, extract_links_from_text, utc_now
 
@@ -146,6 +148,7 @@ class LinkHarvestModule(BaseModule):
                     }
                 )
                 if is_new:
+                    incr(Discovery.LINKS_HARVESTED)
                     logger.info("link_harvest new raw link %s from %s", ref, source)
             except Exception as exc:
                 logger.debug("link_harvest skip %s: %s", ref, exc)

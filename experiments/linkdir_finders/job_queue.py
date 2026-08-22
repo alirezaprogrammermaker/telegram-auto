@@ -56,6 +56,10 @@ def complete_job(
     error: str | None = None,
     result_count: int | None = None,
 ) -> None:
+    from app.metrics_catalog import LinkDir
+    from app.telemetry import incr
+
+    incr(LinkDir.JOBS_COMPLETED if status == "done" else LinkDir.JOBS_FAILED)
     try:
         from app.linkdir_bridge import complete_job as bridge_complete
 

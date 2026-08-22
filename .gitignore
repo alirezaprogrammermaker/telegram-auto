@@ -13,6 +13,7 @@ logs/
 experiments/linkdir_finders/results/
 
 .pytest_cache/
+.pytest-tmp/
 .mypy_cache/
 .idea/
 .vscode/
@@ -26,6 +27,7 @@ tests/*
 !tests/test_linkdir*.py
 !tests/test_login*.py
 !tests/test_promo*.py
+!tests/test_telemetry.py
 !tests/__init__.py
 .playwright-mcp/
 .wrangler/

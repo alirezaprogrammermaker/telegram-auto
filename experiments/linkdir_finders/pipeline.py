@@ -26,6 +26,7 @@ from experiments.linkdir_finders.method_snowball import run_snowball
 from experiments.linkdir_finders.method_telegram_search import run_search
 from experiments.linkdir_finders.refresh_ranks import run_rerank
 from experiments.linkdir_finders.settings import load_config
+from experiments.linkdir_finders.telemetry_map import record_pipeline
 from experiments.linkdir_finders.tg import (
     connect_client,
     safe_disconnect,
@@ -191,6 +192,7 @@ async def run_once(
                 "catalog_counts": summary["catalog_counts"],
             }
         )
+        record_pipeline(summary)
         status = "idle" if summary["ok"] else "idle"
         _heartbeat(
             collector_id=collector_id,

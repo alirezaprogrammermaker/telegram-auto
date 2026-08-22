@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import random
+import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Any
@@ -22,7 +23,9 @@ from telethon.tl.functions.messages import SendReactionRequest
 from telethon.tl.types import Message
 
 from app.base import BaseModule
+from app.metrics_catalog import Promo
 from app.notify import notify_admins
+from app.telemetry import incr
 from modules.channel_forward.refs import display_ref
 from modules.promo_spread.queue import PromoQueue
 from modules.promo_spread.report import report_promo_delivery, report_promo_seen
@@ -34,6 +37,8 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_SEEN_REACTION = "🕊"
 DEFAULT_ACK_REACTION = "👍"
+# The worker ticks every ~6s; collapse repeated blocks into one telemetry sample.
+SKIP_SAMPLE_SECONDS = 300.0
 
 
 @dataclass
@@ -81,6 +86,7 @@ class PromoSpreadModule(BaseModule):
         self._worker: asyncio.Task[None] | None = None
         self._builder: events.NewMessage | None = None
         self._stopping = False
+        self._skip_samples: dict[str, float] = {}
 
     async def start(self) -> None:
         if not self.route_defs:
@@ -333,14 +339,17 @@ class PromoSpreadModule(BaseModule):
 
     async def _worker_once(self) -> None:
         if self.global_paused:
+            self._note_skip(Promo.SKIPPED_PAUSED)
             return
         active, why = self.guard.is_active_now()
         if not active:
             logger.debug("promo idle: %s", why)
+            self._note_skip(Promo.SKIPPED_QUIET)
             return
         ok_b, why_b = self.guard.budget_ok()
         if not ok_b:
             logger.debug("promo budget block: %s", why_b)
+            self._note_skip(Promo.SKIPPED_BUDGET)
             return
 
         item = self.queue.pop_next()
@@ -351,6 +360,7 @@ class PromoSpreadModule(BaseModule):
         cool_ok, cool_why = self.guard.group_cooldown_ok(group_key)
         if not cool_ok:
             self.queue.defer(str(item["id"]), cool_why)
+            incr(Promo.SKIPPED_COOLDOWN)
             return
 
         delay = self.guard.human_delay_seconds()
@@ -370,6 +380,22 @@ class PromoSpreadModule(BaseModule):
             return
 
         await self._deliver_item(item)
+
+    def _note_skip(self, metric: str) -> None:
+        """Sample a blocked tick — only while posts are actually waiting."""
+        if not self._pending_work():
+            return
+        now = time.monotonic()
+        if now - self._skip_samples.get(metric, 0.0) < SKIP_SAMPLE_SECONDS:
+            return
+        self._skip_samples[metric] = now
+        incr(metric)
+
+    def _pending_work(self) -> bool:
+        try:
+            return bool(self.queue.list_pending())
+        except Exception:  # noqa: BLE001 - telemetry must not break the worker
+            return False
 
     def _source_entity_for(self, source_id: int) -> Any | None:
         for route in self._routes_by_source.values():
@@ -487,11 +513,13 @@ class PromoSpreadModule(BaseModule):
             await self._maybe_ack_source_post(item)
 
         except FloodWaitError as exc:
+            incr(Promo.FLOOD_WAIT)
             self.guard.note_flood_wait(int(exc.seconds))
             self.queue.defer(item_id, f"FloodWait {exc.seconds}s")
             self._report_item(item, status="deferred", error=f"FloodWait {exc.seconds}s")
             await asyncio.sleep(int(exc.seconds) + random.randint(5, 20))
         except PeerFloodError:
+            incr(Promo.PEER_FLOOD)
             self.guard.note_peer_flood()
             self.queue.defer(item_id, "PeerFlood")
             self._report_item(item, status="deferred", error="PeerFlood")
@@ -589,6 +617,7 @@ class PromoSpreadModule(BaseModule):
                 msg_id,
                 post_key,
             )
+            self._note_reaction(kind)
         except Exception as exc:
             # Channels that disallow multi-react: retry with the last emoji only.
             if len(clean) > 1:
@@ -609,6 +638,7 @@ class PromoSpreadModule(BaseModule):
                         msg_id,
                         post_key,
                     )
+                    self._note_reaction(kind)
                     return
                 except Exception as exc2:
                     logger.warning(
@@ -624,6 +654,11 @@ class PromoSpreadModule(BaseModule):
                 post_key,
                 exc.__class__.__name__,
             )
+
+    @staticmethod
+    def _note_reaction(kind: str) -> None:
+        metric = Promo.REACTION_ACK if kind == "ack" else Promo.REACTION_SEEN
+        incr(metric)
 
     async def _alert(self, text: str) -> None:
         import os

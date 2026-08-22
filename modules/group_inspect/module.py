@@ -33,8 +33,10 @@ from telethon.tl.types import (
 )
 
 from app.base import BaseModule
+from app.metrics_catalog import Discovery
 from app.paths import account_id, data_path
 from app.storage import load_json, save_json
+from app.telemetry import incr
 from modules.channel_forward.refs import invite_hash
 from modules.group_pool.pool import (
     GroupPool,
@@ -138,6 +140,8 @@ class GroupInspectModule(BaseModule):
         joins.append({"at": utc_now(), "ref": ref, "result": result})
         self._state["joins"] = joins[-200:]
         self._save_state()
+        incr(Discovery.JOINED if result == "done" else Discovery.JOIN_FAILED)
+        incr(Discovery.INSPECTED)
 
     def _open_circuit(self, hours: float, reason: str) -> None:
         until = datetime.now(timezone.utc) + timedelta(hours=hours)

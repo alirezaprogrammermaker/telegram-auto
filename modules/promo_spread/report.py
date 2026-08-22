@@ -4,7 +4,17 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from app.metrics_catalog import Promo
+from app.telemetry import incr, incr_many
+
 logger = logging.getLogger(__name__)
+
+_DELIVERY_METRICS = {
+    "delivered": Promo.DELIVERED,
+    "failed": Promo.FAILED,
+    "deferred": Promo.DEFERRED,
+    "dry_run": Promo.DRY_RUN,
+}
 
 
 def _account_id() -> str:
@@ -26,6 +36,7 @@ def report_promo_seen(
     mode: str | None = None,
 ) -> None:
     """POST /internal/promo/seen — post received + queued targets."""
+    incr_many({Promo.POSTS_SEEN: 1, Promo.TARGETS_QUEUED: len(jobs)})
     aid = _account_id()
     if not aid or not post_key:
         return
@@ -56,6 +67,9 @@ def report_promo_delivery(
     mode: str | None = None,
 ) -> None:
     """POST /internal/promo/delivery — one group outcome."""
+    metric = _DELIVERY_METRICS.get((status or "").strip().lower())
+    if metric:
+        incr(metric)
     aid = _account_id()
     if not aid or not job_id or not post_key:
         return

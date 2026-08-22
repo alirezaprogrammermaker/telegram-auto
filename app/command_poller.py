@@ -17,7 +17,9 @@ from typing import TYPE_CHECKING, Any
 
 from app.bridge_client import bridge_configured, bridge_request
 from app.command_handlers import dispatch_command
+from app.metrics_catalog import Gauge
 from app.paths import account_id as resolve_account_id
+from app.telemetry import flush as telemetry_flush
 
 if TYPE_CHECKING:
     from app.runtime import ModuleRuntime
@@ -157,7 +159,9 @@ class CommandPoller:
         try:
             from app.metrics_snapshot import collect_runtime_metrics
 
-            meta["metrics"] = collect_runtime_metrics()
+            metrics = collect_runtime_metrics()
+            meta["metrics"] = metrics
+            self._push_gauges(metrics)
         except Exception:
             logger.debug("command_poller: metrics snapshot skipped", exc_info=True)
 
@@ -172,6 +176,14 @@ class CommandPoller:
             },
         )
         logger.debug("command_poller: heartbeat pushed for %s", self.account_id)
+        telemetry_flush()
+
+    @staticmethod
+    def _push_gauges(metrics: dict[str, Any]) -> None:
+        from app.telemetry import gauge
+
+        gauge(Gauge.FORWARD_QUEUE_PENDING, int(metrics.get("forward_queue_pending") or 0))
+        gauge(Gauge.PROMO_QUEUE_PENDING, int(metrics.get("promo_queue_pending") or 0))
 
 
 def build_poller(runtime: "ModuleRuntime") -> "CommandPoller | None":

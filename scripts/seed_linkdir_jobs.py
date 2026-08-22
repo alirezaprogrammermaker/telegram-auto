@@ -16,6 +16,7 @@ from experiments.linkdir_finders.job_queue import (  # noqa: E402
     queries_for_set,
 )
 from experiments.linkdir_finders.settings import load_config  # noqa: E402
+from experiments.linkdir_finders.telemetry_map import record_seed  # noqa: E402
 
 SHARDS = ("fa", "en", "niche")
 
@@ -209,16 +210,20 @@ def main() -> int:
                 niches=list(jq.get("seed_niches") or []),
                 suffixes=list(jq.get("seed_suffixes") or []),
             )
+        # Core/static queries: higher priority (lower number) + shorter redo
+        # so collectors burn proven phrases before fancy AI ones.
+        core_redo = int(jq.get("core_redo_days") or min(2, redo_days))
         priority = args.priority + (10 if shard == "niche" else 0)
         counts = _enqueue_list(
             queries,
             query_set=shard,
             priority=priority,
-            redo_days=redo_days,
+            redo_days=core_redo,
             dry_run=bool(args.dry_run),
+            source="seed_core",
         )
         failed_total += int(counts["failed"])
-        shard_summaries.append({"query_set": shard, **counts})
+        shard_summaries.append({"query_set": shard, "source": "seed_core", **counts})
 
         if not ai_enabled:
             continue
@@ -229,10 +234,11 @@ def main() -> int:
         ai_summaries.append(ai_entry)
         if not ai_queries:
             continue
+        # AI extras run after cores (higher priority number) and redo slower.
         ai_counts = _enqueue_list(
             ai_queries,
             query_set=shard,
-            priority=priority,
+            priority=priority + 40,
             redo_days=redo_days,
             dry_run=bool(args.dry_run),
             source="ai_agent",
@@ -245,7 +251,7 @@ def main() -> int:
                 meta={
                     "model": ai_summary.get("model"),
                     "account": ai_summary.get("account"),
-                    "priority": priority,
+                    "priority": priority + 40,
                 },
             )
 
@@ -266,6 +272,8 @@ def main() -> int:
             "used": any(bool(s.get("used")) for s in ai_summaries),
             "shards": ai_summaries,
         }
+    if not args.dry_run:
+        record_seed(summary)
     print(json.dumps(summary, ensure_ascii=False))
     return 0 if failed_total == 0 else 1
 

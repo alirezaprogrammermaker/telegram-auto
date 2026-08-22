@@ -1,0 +1,67 @@
+# Daily performance digest pushed from cf-admin-bot to every opted-in admin.
+
+name: stats-digest
+
+on:
+  schedule:
+    # 05:30 UTC == 09:00 Asia/Tehran — yesterday's numbers are final by then.
+    - cron: "30 5 * * *"
+  workflow_dispatch:
+    inputs:
+      preset:
+        description: "Report window (today | yesterday | week | month)"
+        required: false
+        type: string
+        default: "yesterday"
+
+permissions:
+  contents: read
+
+jobs:
+  digest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Push daily digest
+        env:
+          BRIDGE_URL: ${{ secrets.ADMIN_BOT_BRIDGE_URL }}
+          BRIDGE_TOKEN: ${{ secrets.ADMIN_BOT_BRIDGE_TOKEN }}
+          PRESET: ${{ inputs.preset }}
+        run: |
+          set -euo pipefail
+          if [ -z "${BRIDGE_URL:-}" ] || [ -z "${BRIDGE_TOKEN:-}" ]; then
+            echo "Missing ADMIN_BOT_BRIDGE_URL or ADMIN_BOT_BRIDGE_TOKEN"
+            exit 1
+          fi
+          python3 <<'PY'
+          import json, os, urllib.error, urllib.parse, urllib.request
+
+          preset = (os.environ.get("PRESET") or "yesterday").strip() or "yesterday"
+          base = os.environ["BRIDGE_URL"].rstrip("/")
+          url = base + "/internal/stats/digest"
+
+          # Default Python-urllib UA is blocked by Cloudflare (HTTP 403).
+          req = urllib.request.Request(
+              url,
+              data=json.dumps({"preset": preset}).encode("utf-8"),
+              method="POST",
+              headers={
+                  "Authorization": f"Bearer {os.environ['BRIDGE_TOKEN']}",
+                  "Content-Type": "application/json",
+                  "Accept": "application/json",
+                  "User-Agent": "telegram-auto-bridge/1.0",
+              },
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=90) as resp:
+                  body = resp.read().decode("utf-8", errors="replace")
+          except urllib.error.HTTPError as exc:
+              err_body = exc.read().decode("utf-8", errors="replace")[:500]
+              host = urllib.parse.urlparse(base).netloc
+              raise SystemExit(
+                  f"digest HTTP {exc.code} host={host} body={err_body!r}"
+              ) from None
+          print(body)
+          data = json.loads(body)
+          if not data.get("ok"):
+              raise SystemExit("digest returned ok=false")
+          PY

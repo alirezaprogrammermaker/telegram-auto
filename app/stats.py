@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+from app.metrics_catalog import FORWARD_STAT_METRICS
 from app.paths import data_path
 from app.storage import load_json, save_json
 
@@ -64,6 +65,17 @@ class StatsStore:
             for old in keys[:-60]:
                 self._data["days"].pop(old, None)
             save_json(self.path, self._data)
+        self._mirror_to_telemetry(metric, amount)
+
+    @staticmethod
+    def _mirror_to_telemetry(metric: str, amount: int) -> None:
+        """Every forward counter doubles as admin-bot telemetry."""
+        key = FORWARD_STAT_METRICS.get(metric)
+        if not key:
+            return
+        from app.telemetry import incr
+
+        incr(key, amount)
 
     def summary(
         self,
