@@ -7,6 +7,7 @@ import random
 import time
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from telethon import TelegramClient, events
@@ -27,6 +28,7 @@ from app.metrics_catalog import Promo
 from app.notify import notify_admins
 from app.telemetry import incr
 from modules.channel_forward.refs import display_ref
+from modules.promo_spread.catchup import is_fresh_enough_to_enqueue, select_catchup_posts
 from modules.promo_spread.queue import PromoQueue
 from modules.promo_spread.report import report_promo_delivery, report_promo_seen
 from modules.promo_spread.routes import migrate_routes
@@ -39,6 +41,8 @@ DEFAULT_SEEN_REACTION = "🕊"
 DEFAULT_ACK_REACTION = "👍"
 # The worker ticks every ~6s; collapse repeated blocks into one telemetry sample.
 SKIP_SAMPLE_SECONDS = 300.0
+DEFAULT_CATCHUP_LIMIT = 3
+DEFAULT_CATCHUP_HOURS = 12.0
 
 
 @dataclass
@@ -68,6 +72,10 @@ class PromoSpreadModule(BaseModule):
         self.safety_cfg = SafetyConfig.from_dict(config.get("safety"))
         self.guard = SafetyGuard(self.safety_cfg)
         self.queue = PromoQueue()
+        # Runs are not continuous (GHA jobs queue and expire), so a post published
+        # while nothing was alive would never reach the NewMessage handler.
+        self.catchup_limit = max(0, int(config.get("catchup_limit", DEFAULT_CATCHUP_LIMIT)))
+        self.catchup_hours = max(0.0, float(config.get("catchup_hours", DEFAULT_CATCHUP_HOURS)))
         raw_seen = config.get("seen_reaction", DEFAULT_SEEN_REACTION)
         if raw_seen is False or raw_seen is None:
             self.seen_reaction = ""
@@ -179,6 +187,51 @@ class PromoSpreadModule(BaseModule):
             self.global_paused,
             self.auto_join,
         )
+
+        pending = self.queue.pending_count()
+        if pending:
+            logger.info("promo resuming %s pending job(s) from previous run", pending)
+        for route in list(self._routes_by_source.values()):
+            if route.paused or self.global_paused:
+                continue
+            await self._catchup_route(route)
+
+    async def _catchup_route(self, route: ResolvedPromoRoute) -> None:
+        """Enqueue source posts that were published while no run was alive."""
+        if self.catchup_limit <= 0 or self.catchup_hours <= 0:
+            return
+        try:
+            fetched = await self.client.get_messages(
+                route.source_entity, limit=max(10, self.catchup_limit * 4)
+            )
+        except Exception:
+            logger.warning(
+                "promo catchup fetch failed for %s", route.source_ref, exc_info=True
+            )
+            return
+
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=self.catchup_hours)
+        posts = select_catchup_posts(
+            [m for m in (fetched or []) if isinstance(m, Message)],
+            cutoff=cutoff,
+            limit=self.catchup_limit,
+        )
+        # An empty marker history means the state file is new, so "unseen" would
+        # match every recent post — record a baseline instead of blasting them.
+        priming = not self.queue.has_seen_history()
+        for messages in posts:
+            ids = [m.id for m in messages if m.id]
+            if not ids:
+                continue
+            post_key = f"{route.source_id}:{min(ids)}-{max(ids)}"
+            if self.queue.post_seen(post_key):
+                continue
+            if priming and not is_fresh_enough_to_enqueue(messages):
+                self.queue.try_claim_post_seen(post_key)
+                logger.info("promo catchup baseline %s (%s)", post_key, route.source_ref)
+                continue
+            logger.info("promo catchup missed post %s (%s)", post_key, route.source_ref)
+            await self._enqueue_post(route, messages)
 
     def _chat_key(self, entity: Any) -> int:
         try:
@@ -339,17 +392,15 @@ class PromoSpreadModule(BaseModule):
 
     async def _worker_once(self) -> None:
         if self.global_paused:
-            self._note_skip(Promo.SKIPPED_PAUSED)
+            self._note_skip(Promo.SKIPPED_PAUSED, "promo paused")
             return
         active, why = self.guard.is_active_now()
         if not active:
-            logger.debug("promo idle: %s", why)
-            self._note_skip(Promo.SKIPPED_QUIET)
+            self._note_skip(Promo.SKIPPED_QUIET, why)
             return
         ok_b, why_b = self.guard.budget_ok()
         if not ok_b:
-            logger.debug("promo budget block: %s", why_b)
-            self._note_skip(Promo.SKIPPED_BUDGET)
+            self._note_skip(Promo.SKIPPED_BUDGET, why_b)
             return
 
         item = self.queue.pop_next()
@@ -372,30 +423,39 @@ class PromoSpreadModule(BaseModule):
         )
         await asyncio.sleep(delay)
 
-        active, _ = self.guard.is_active_now()
+        active, why = self.guard.is_active_now()
         if not active or self.global_paused:
+            logger.info(
+                "promo pacing aborted for %s: %s",
+                group_key,
+                "paused" if self.global_paused else why,
+            )
             return
-        ok_b, _ = self.guard.budget_ok()
+        ok_b, why_b = self.guard.budget_ok()
         if not ok_b:
+            logger.info("promo pacing aborted for %s: %s", group_key, why_b)
             return
 
         await self._deliver_item(item)
 
-    def _note_skip(self, metric: str) -> None:
+    def _note_skip(self, metric: str, reason: str) -> None:
         """Sample a blocked tick — only while posts are actually waiting."""
-        if not self._pending_work():
+        pending = self._pending_count()
+        if not pending:
             return
         now = time.monotonic()
         if now - self._skip_samples.get(metric, 0.0) < SKIP_SAMPLE_SECONDS:
             return
         self._skip_samples[metric] = now
         incr(metric)
+        # INFO on purpose: a silent hold looks identical to a broken forwarder.
+        logger.info("promo holding %s pending job(s): %s", pending, reason)
 
-    def _pending_work(self) -> bool:
+    def _pending_count(self) -> int:
         try:
-            return bool(self.queue.list_pending())
+            return len(self.queue.list_pending())
         except Exception:  # noqa: BLE001 - telemetry must not break the worker
-            return False
+            return 0
 
     def _source_entity_for(self, source_id: int) -> Any | None:
         for route in self._routes_by_source.values():

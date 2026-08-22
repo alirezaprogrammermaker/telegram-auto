@@ -41,7 +41,7 @@ class PromoQueue:
                     and existing.get("group_id") == group_id
                     and existing.get("post_key") == post_key
                 ):
-                    return str(existing.get("id"))
+                    return None
             items.append(
                 {
                     "id": item_id,
@@ -129,6 +129,23 @@ class PromoQueue:
     def try_claim_post_seen(self, post_key: str) -> bool:
         """Return True once when a post is first noticed (seen reaction)."""
         return self._try_claim_marker(post_key, bucket="seen_posts")
+
+    def post_seen(self, post_key: str) -> bool:
+        """Was this post already noticed? Read-only, unlike try_claim_post_seen."""
+        key = str(post_key or "").strip()
+        if not key:
+            return False
+        with _lock:
+            self._data = load_json(self.path, {"items": []})
+            markers = self._data.get("seen_posts")
+        return isinstance(markers, dict) and key in markers
+
+    def has_seen_history(self) -> bool:
+        """False for a brand-new state file — catch-up uses it to avoid backlogs."""
+        with _lock:
+            self._data = load_json(self.path, {"items": []})
+            markers = self._data.get("seen_posts")
+        return bool(isinstance(markers, dict) and markers)
 
     def try_claim_post_ack(self, post_key: str) -> bool:
         """Return True once when a post has no pending jobs left (first claim wins)."""

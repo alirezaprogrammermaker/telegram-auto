@@ -166,7 +166,7 @@ class AutoReplyModule(BaseModule):
             ("/promo remove @channel", "حذف یک مسیر"),
             ("/promo group add|remove @channel @group", "گروه یک مسیر"),
             ("/promo dryrun|pause|resume|queue", "ایمنی و صف پخش"),
-            ("/promo safety delay|budget|windows", "تنظیم فاصله/سقف/بازه"),
+            ("/promo safety delay|budget|windows|quiet", "تنظیم فاصله/سقف/بازه/سکوت"),
             ("/harvest status|add|remove", "جمع‌آوری لینک از لینکدونی (collector)"),
             ("/inspect status|dryrun|budget", "بازرسی آهسته گروه (inspector)"),
             ("/pool status|list|approve|to-promo", "استخر مشترک کشف گروه"),

@@ -12,7 +12,7 @@ from modules.promo_spread.routes import (
     remove_route,
     upsert_route,
 )
-from modules.promo_spread.safety import SafetyConfig
+from modules.promo_spread.safety import SafetyConfig, quiet_hours_to_windows
 from modules.promo_spread.targets import normalize_group_list
 
 
@@ -286,7 +286,9 @@ async def handle_promo_command(
         if len(parts) == 2:
             for line in safety_summary:
                 await progress.step(line)
-            await progress.success("برای تغییر: `/promo safety delay|budget|windows|cooldown`")
+            await progress.success(
+                "برای تغییر: `/promo safety delay|budget|windows|quiet|cooldown`"
+            )
             return
         sub = parts[2].lower()
         patch: dict[str, Any] = safety.to_dict()
@@ -306,9 +308,23 @@ async def handle_promo_command(
         elif sub == "windows" and len(parts) >= 4:
             wins = _parse_windows(" ".join(parts[3:]))
             if not wins:
-                await progress.fail("فرمت: `09:30-13:00,16:00-22:00`")
+                await progress.fail("فرمت: `06:00-23:59`")
                 return
             patch["active_windows"] = wins
+        elif sub == "quiet" and len(parts) >= 3:
+            raw = " ".join(parts[3:]).replace("–", "-").replace("—", "-")
+            span = raw
+            if "-" not in span and len(parts) >= 5:
+                span = f"{parts[3]}-{parts[4]}"
+            if "-" not in span:
+                await progress.fail("فرمت: `/promo safety quiet 00:00-06:00`")
+                return
+            start, end = span.split("-", 1)
+            try:
+                patch["active_windows"] = quiet_hours_to_windows(start, end)
+            except ValueError:
+                await progress.fail("ساعت نامعتبر است. مثال: `00:00-06:00`")
+                return
         elif sub == "cooldown" and len(parts) >= 4:
             patch["per_group_cooldown_minutes"] = int(parts[3])
         elif sub == "tz" and len(parts) >= 4:
@@ -316,8 +332,9 @@ async def handle_promo_command(
         else:
             await progress.fail(
                 "`/promo safety delay 70 190`\n"
-                "`/promo safety budget daily 28 hourly 5`\n"
-                "`/promo safety windows 09:30-13:00,16:00-22:00`\n"
+                "`/promo safety budget daily 36 hourly 8`\n"
+                "`/promo safety windows 06:00-23:59`\n"
+                "`/promo safety quiet 00:00-06:00`\n"
                 "`/promo safety cooldown 50`"
             )
             return

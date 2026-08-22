@@ -38,16 +38,16 @@ class SafetyConfig:
     )
     active_windows: list[dict[str, str]] = field(
         default_factory=lambda: [
-            {"start": "09:30", "end": "13:00"},
-            {"start": "16:00", "end": "22:00"},
+            # Quiet 00:00–06:00 Iran time; send the rest of the day.
+            {"start": "06:00", "end": "23:59"},
         ]
     )
     delay_min_seconds: float = 70.0
     delay_max_seconds: float = 190.0
     delay_bias: float = 0.62  # >0.5 prefers longer gaps (more human)
     per_group_cooldown_minutes: int = 50
-    hourly_budget: int = 5
-    daily_budget: int = 28
+    hourly_budget: int = 8
+    daily_budget: int = 36
     typing_min_seconds: float = 1.8
     typing_max_seconds: float = 5.0
     read_before_send: bool = True
@@ -335,3 +335,38 @@ class SafetyGuard:
             f"windows: {self.cfg.active_windows}",
             f"tz: {self.cfg.timezone}",
         ]
+
+
+def _parse_hhmm_tuple(raw: str) -> tuple[int, int] | None:
+    try:
+        h, m = str(raw).strip().split(":", 1)
+        hh, mm = int(h), int(m)
+        if hh == 24 and mm == 0:
+            return 0, 0
+        if 0 <= hh <= 23 and 0 <= mm <= 59:
+            return hh, mm
+    except (ValueError, TypeError):
+        return None
+    return None
+
+
+def quiet_hours_to_windows(start: str, end: str) -> list[dict[str, str]]:
+    """Invert one quiet interval into complementary active window(s).
+
+    ``00:00-06:00`` → ``06:00-23:59``
+    ``22:00-08:00`` → ``08:00-22:00``
+    """
+    a = _parse_hhmm_tuple(start)
+    b = _parse_hhmm_tuple(end)
+    if a is None or b is None:
+        raise ValueError("bad quiet hours")
+    start_s = f"{a[0]:02d}:{a[1]:02d}"
+    end_s = f"{b[0]:02d}:{b[1]:02d}"
+    if a <= b:
+        if a == (0, 0):
+            return [{"start": end_s, "end": "23:59"}]
+        windows = [{"start": "00:00", "end": start_s}]
+        if b != (23, 59):
+            windows.append({"start": end_s, "end": "23:59"})
+        return windows
+    return [{"start": end_s, "end": start_s}]

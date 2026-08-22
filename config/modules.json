@@ -72,20 +72,16 @@
         ],
         "active_windows": [
           {
-            "start": "09:30",
-            "end": "13:00"
-          },
-          {
-            "start": "16:00",
-            "end": "22:00"
+            "start": "06:00",
+            "end": "23:59"
           }
         ],
         "delay_min_seconds": 70,
         "delay_max_seconds": 190,
         "delay_bias": 0.62,
         "per_group_cooldown_minutes": 50,
-        "hourly_budget": 5,
-        "daily_budget": 28,
+        "hourly_budget": 8,
+        "daily_budget": 36,
         "typing_min_seconds": 1.8,
         "typing_max_seconds": 5.0,
         "read_before_send": true,
@@ -99,7 +95,9 @@
       },
       "source": null,
       "groups": [],
-      "auto_join": false
+      "auto_join": false,
+      "catchup_limit": 3,
+      "catchup_hours": 12
     },
     "link_harvest": {
       "enabled": false,

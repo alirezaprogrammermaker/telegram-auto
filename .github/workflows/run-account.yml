@@ -72,10 +72,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: data/${{ inputs.account_id }}
-          key: data-${{ github.repository }}-${{ inputs.account_id }}-v1
+          # run_id keeps the primary key unique: a constant key always hits on
+          # restore, and actions/cache then refuses to save, so every queue and
+          # safety-counter update was thrown away when the job ended.
+          key: data-${{ github.repository }}-${{ inputs.account_id }}-v1-${{ github.run_id }}
           restore-keys: |
+            data-${{ github.repository }}-${{ inputs.account_id }}-v1-
             data-${{ github.repository }}-${{ inputs.account_id }}-
-            data-${{ github.repository }}-
 
       - name: Restore shared group pool
         uses: actions/cache@v4
