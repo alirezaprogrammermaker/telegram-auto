@@ -80,10 +80,29 @@ def test_disallowed_chars_lists_distinct_offenders() -> None:
         ("لینکدونی\nتبادل لینک", "looks_like_prose"),
         ('"لینکدونی"', "looks_like_prose"),
         ("لینکدونی، تبادل", "looks_like_prose"),
+        ("باشگاه تبادل لینک", "fancy_prefix"),
+        ("آرشیو لینک رایگان", "fancy_prefix"),
+        ("پروژه لینکدونی", "fancy_prefix"),
+        ("مرکز تبادل لینک تخصصی", "fancy_prefix"),
+        ("گپ تبلیغات آزاد", "missing_core_anchor"),
+        ("تبادل لینک عکاسی", "weak_niche_topic"),
+        ("تبادل لینک کتاب", "weak_niche_topic"),
+        ("لینکدونی تهران گپ چت آزاد", "too_specific_persian"),
     ],
 )
 def test_shape_rules(query: str, reason: str) -> None:
     assert validate_query(query) == reason
+
+
+def test_accepts_proven_short_cores() -> None:
+    for query in (
+        "تبادل لینک",
+        "لینکدونی",
+        "ثبت لینک رایگان",
+        "لینکدونی تهران",
+        "گروه تبادل لینک",
+    ):
+        assert is_valid_query(query), validate_query(query)
 
 
 def test_length_boundaries_are_inclusive() -> None:
@@ -139,9 +158,11 @@ def test_filter_queries_dedupes_within_the_batch() -> None:
 
 
 def test_filter_queries_honours_limit() -> None:
-    accepted, rejected = filter_queries(["یک لینک", "دو لینک", "سه لینک"], limit=2)
+    accepted, rejected = filter_queries(
+        ["لینکدونی یک", "لینکدونی دو", "لینکدونی سه"], limit=2
+    )
     assert len(accepted) == 2
-    assert rejected == [{"query": "سه لینک", "reason": "over_limit"}]
+    assert rejected == [{"query": "لینکدونی سه", "reason": "over_limit"}]
 
 
 def test_filter_queries_normalizes_accepted_output() -> None:

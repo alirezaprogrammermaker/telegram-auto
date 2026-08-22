@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   sync:
@@ -43,8 +44,27 @@ jobs:
           python -m app.promo_group_sync
 
       - name: Auto-commit changed promo configs
+        id: commit
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           commit_message: "chore: sync promo routes from linkdir"
           file_pattern: "config/accounts/promo*.json"
 
+      # Telethon runners only load profile at process start. Without this,
+      # synced routes/sources never trigger auto_join until a manual restart.
+      - name: Restart enabled promo runners
+        if: steps.commit.outputs.changes_detected == 'true' && (github.event_name != 'workflow_dispatch' || inputs.dry_run == false)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mapfile -t workflows < <(ls -1 .github/workflows/run-account-promo*.yml 2>/dev/null || true)
+          if [ "${#workflows[@]}" -eq 0 ]; then
+            echo "no promo workflows found"
+            exit 0
+          fi
+          for path in "${workflows[@]}"; do
+            name="$(basename "$path")"
+            echo "dispatch $name"
+            gh workflow run "$name" --ref "${{ github.ref_name }}" || echo "dispatch failed: $name"
+          done

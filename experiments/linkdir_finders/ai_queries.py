@@ -35,11 +35,22 @@ _CATALOG_SCAN_LIMIT = 200
 _TITLE_CHARS = 60
 
 QUERY_SET_HINTS = {
-    "fa": "Persian (Farsi) search terms only. No English words.",
-    "en": "English search terms only, lowercase, no Persian script.",
+    "fa": (
+        "Persian only. Prefer 2-3 word phrases built from proven cores: "
+        "لینکدونی، تبادل لینک، لینک رایگان، ثبت لینک، تبلیغ رایگان، دیوار لینک. "
+        "Good examples: تبادل لینک، لینکدونی، ثبت لینک رایگان، گروه تبادل لینک. "
+        "NEVER invent institutional wording like باشگاه/آرشیو/پروژه/مرکز/تخصصی — "
+        "Telegram Search returns zero chats for those."
+    ),
+    "en": (
+        "English only, lowercase. Prefer short phrases real link-exchange "
+        "groups use: link exchange, free link dump, telegram promo links, "
+        "share your channel. Avoid long marketing slogans."
+    ),
     "niche": (
-        "Persian search terms that combine the link-directory idea with a niche "
-        "(city, topic, marketplace, hobby) to reach smaller uncrowded directories."
+        "Persian only. Pattern MUST be: لینکدونی <city/topic> OR تبادل لینک <topic>. "
+        "Cities and broad markets work (تهران، مشهد، ارز دیجیتال، اینستاگرام، فیلم). "
+        "Avoid obscure hobbies (عکاسی، کتاب) that match book/photo groups instead of linkdirs."
     ),
 }
 
@@ -61,9 +72,12 @@ exchange links, and advertise channels.
 Hard rules for every query you output:
 - Use ONLY Persian/Arabic script or basic English letters and digits.
 - NEVER use Chinese, Japanese, Korean, Cyrillic, Devanagari, emoji or any other script.
-- 1 to 5 words, 2 to 40 characters. Short search phrases, not sentences.
+- Prefer 2 to 3 words (hard max 5). Short search phrases, not sentences.
 - No punctuation except spaces, and no explanations or numbering.
 - Do not repeat queries that already exist.
+- Persian queries MUST contain one core token: لینکدونی / تبادل لینک / لینک رایگان / ثبت لینک / تبلیغ رایگان / دیوار لینک.
+- NEVER start with باشگاه، آرشیو، پروژه، مرکز، پلتفرم، سامانه، انجمن.
+- NEVER add تخصصی / حرفه‌ای / رسمی as decoration — those kill Telegram Search hits.
 
 Call the provided tools first to learn which query patterns produced good and \
 bad results, then answer with the JSON object required by the schema.
@@ -359,7 +373,8 @@ def _user_prompt(count: int, query_set: str, feedback: _Feedback) -> str:
     lines = [
         f"Generate {count} NEW Telegram search queries for the '{query_set}' query set.",
         hint,
-        "Prefer wording that real Persian link-directory admins put in channel names and bios.",
+        "Optimise for contacts.Search hit-rate, not clever branding.",
+        "Copy how real admins name groups: short, blunt, keyword-heavy.",
     ]
     if feedback.titles:
         lines.append(

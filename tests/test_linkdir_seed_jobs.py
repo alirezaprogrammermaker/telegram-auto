@@ -95,7 +95,7 @@ def test_no_ai_flag_overrides_enabled_config(
     assert "ai" not in summary
     assert summary["enqueued"] == len(expected)
     assert [job["query"] for job in jobs] == expected
-    assert {job["source"] for job in jobs} == {"seed_script"}
+    assert {job["source"] for job in jobs} == {"seed_core"}
 
 
 def test_disabled_config_without_flag_skips_ai(
@@ -257,7 +257,7 @@ def test_ai_failure_keeps_static_queries_and_exit_code(
     jobs = _enqueued(bridge)
 
     assert code == 0
-    assert {job["source"] for job in jobs} == {"seed_script"}
+    assert {job["source"] for job in jobs} == {"seed_core"}
     assert summary["enqueued"] == len(load_config()["queries_fa"])
     assert summary["ai"]["used"] is False
     assert summary["ai"]["shards"][0]["reason"] == "quota_exhausted"

@@ -48,7 +48,8 @@ _DEFAULTS: dict[str, Any] = {
     },
     "job_queue": {
         "enabled": True,
-        "search_redo_days": 14,
+        "search_redo_days": 7,
+        "core_redo_days": 2,
         "seed_niches": ["گپ", "کانال", "گروه"],
         "seed_suffixes": ["لینک", "لینکدونی", "تبادل لینک"],
     },

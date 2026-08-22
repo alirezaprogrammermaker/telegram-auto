@@ -23,6 +23,49 @@ MAX_LENGTH = 40
 MIN_WORDS = 1
 MAX_WORDS = 5
 
+# Words that make Telegram contacts.Search return almost nothing for
+# لینکدونی discovery (local probe 2026-08-21). Prefer short core phrases.
+_FANCY_PREFIXES = (
+    "باشگاه",
+    "آرشیو",
+    "پروژه",
+    "مرکز",
+    "پلتفرم",
+    "سامانه",
+    "انجمن",
+    "کلوب",
+    "کلاب",
+    "آکادمی",
+    "دانشنامه",
+)
+_FANCY_SUFFIXES = ("تخصصی", "حرفه‌ای", "رسمی", "بین‌المللی", "بین المللی")
+_WEAK_NICHE_TOPICS = (
+    "کتاب",
+    "عکاسی",
+    "موسیقی",
+    "ورزش",
+    "شعر",
+    "آشپزی",
+    "pdf",
+    "پادکست",
+)
+_CORE_ANCHORS = (
+    "لینکدونی",
+    "لینک دونی",
+    "تبادل لینک",
+    "لینک رایگان",
+    "ثبت لینک",
+    "تبلیغ رایگان",
+    "دیوار لینک",
+    "پخش لینک",
+    "گروه لینک",
+    "کانال لینک",
+    "linkdoni",
+    "link exchange",
+    "link dump",
+    "links directory",
+)
+
 LESSON_MIN_LENGTH = 12
 LESSON_MAX_LENGTH = 220
 LESSON_MIN_WORDS = 3
@@ -108,8 +151,33 @@ def validate_query(query: str, *, known_keys: set[str] | None = None) -> str | N
     if len(words) > MAX_WORDS:
         return "too_many_words"
 
+    fancy_reason = _telegram_search_effectiveness(normalized)
+    if fancy_reason:
+        return fancy_reason
+
     if known_keys is not None and dedupe_key(normalized) in known_keys:
         return "duplicate"
+    return None
+
+
+def _telegram_search_effectiveness(normalized: str) -> str | None:
+    """Reject phrases that Telegram search does not match for linkdirs."""
+    lower = normalized.lower().replace(ZWNJ, "")
+    words = lower.split(" ")
+    if words and words[0] in _FANCY_PREFIXES:
+        return "fancy_prefix"
+    if any(suf.replace(ZWNJ, "") in lower for suf in _FANCY_SUFFIXES):
+        return "fancy_suffix"
+    if any(topic in lower for topic in _WEAK_NICHE_TOPICS):
+        return "weak_niche_topic"
+    # Persian multi-word queries need a proven anchor; otherwise Search
+    # returns empty or off-topic hobby groups.
+    if has_persian(normalized) and len(words) >= 2:
+        if not any(anchor.replace(ZWNJ, "") in lower for anchor in _CORE_ANCHORS):
+            return "missing_core_anchor"
+        # 5+ word Persian phrases almost never beat short cores.
+        if len(words) >= 5:
+            return "too_specific_persian"
     return None
 
 
