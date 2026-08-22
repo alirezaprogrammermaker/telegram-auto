@@ -99,6 +99,8 @@ jobs:
               headers={
                   "Authorization": f"Bearer {os.environ['BRIDGE_TOKEN']}",
                   "Content-Type": "application/json",
+                  "Accept": "application/json",
+                  "User-Agent": "telegram-auto-bridge/1.0",
               },
           )
           with urllib.request.urlopen(req, timeout=30) as resp:

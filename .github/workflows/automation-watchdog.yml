@@ -32,16 +32,18 @@ jobs:
             exit 1
           fi
           python3 <<'PY'
-          import json, os, urllib.parse, urllib.request
+          import json, os, urllib.error, urllib.parse, urllib.request
 
           user_id = (os.environ.get("USER_ID") or "").strip()
           params = {}
           if user_id:
               params["user_id"] = user_id
-          url = os.environ["BRIDGE_URL"].rstrip("/") + "/internal/automation/run"
+          base = os.environ["BRIDGE_URL"].rstrip("/")
+          url = base + "/internal/automation/run"
           if params:
               url += "?" + urllib.parse.urlencode(params)
 
+          # Default Python-urllib UA is blocked by Cloudflare (HTTP 403).
           req = urllib.request.Request(
               url,
               data=b"{}",
@@ -49,12 +51,21 @@ jobs:
               headers={
                   "Authorization": f"Bearer {os.environ['BRIDGE_TOKEN']}",
                   "Content-Type": "application/json",
+                  "Accept": "application/json",
+                  "User-Agent": "telegram-auto-bridge/1.0",
               },
           )
-          with urllib.request.urlopen(req, timeout=60) as resp:
-              body = resp.read().decode("utf-8", errors="replace")
-              print(body)
-              data = json.loads(body)
-              if not data.get("ok"):
-                  raise SystemExit("watchdog returned ok=false")
+          try:
+              with urllib.request.urlopen(req, timeout=60) as resp:
+                  body = resp.read().decode("utf-8", errors="replace")
+          except urllib.error.HTTPError as exc:
+              err_body = exc.read().decode("utf-8", errors="replace")[:500]
+              host = urllib.parse.urlparse(base).netloc
+              raise SystemExit(
+                  f"watchdog HTTP {exc.code} host={host} body={err_body!r}"
+              ) from None
+          print(body)
+          data = json.loads(body)
+          if not data.get("ok"):
+              raise SystemExit("watchdog returned ok=false")
           PY
