@@ -22,7 +22,10 @@
       "catchup_hours": 12,
       "safety": {
         "active_windows": [
-          {"start": "06:00", "end": "23:59"}
+          {
+            "start": "06:00",
+            "end": "23:59"
+          }
         ],
         "hourly_budget": 8,
         "daily_budget": 36
