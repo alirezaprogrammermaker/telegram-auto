@@ -18,7 +18,15 @@
       "paused": false,
       "mode": "forward",
       "auto_join": true,
-      "routes": []
+      "routes": [
+        {
+          "source": "@aads_posts",
+          "groups": [],
+          "enabled": true,
+          "paused": false,
+          "mode": "forward"
+        }
+      ]
     },
     "link_harvest": {
       "enabled": false
