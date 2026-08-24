@@ -143,6 +143,15 @@
       "session_name": "promo3",
       "session_secret": "TELEGRAM_SESSION_B64_PROMO3",
       "profile": "config/accounts/promo3.json"
+    },
+    {
+      "id": "promo4",
+      "label": "promo4 (promo)",
+      "enabled": false,
+      "workflow": "run-account-promo4.yml",
+      "session_name": "promo4",
+      "session_secret": "TELEGRAM_SESSION_B64_PROMO4",
+      "profile": "config/accounts/promo4.json"
     }
   ]
 }
