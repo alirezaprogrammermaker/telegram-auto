@@ -55,7 +55,8 @@
             "@swgrouplinks",
             "@GlobalLinks3",
             "@sabt_raygan1",
-            "@EarlyLinkExchange"
+            "@EarlyLinkExchange",
+            "@cross_promotion_links_group"
           ],
           "enabled": true,
           "paused": false,

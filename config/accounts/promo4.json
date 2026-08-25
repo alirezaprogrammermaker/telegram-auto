@@ -21,7 +21,17 @@
       "routes": [
         {
           "source": "@aads_posts",
-          "groups": [],
+          "groups": [
+            "@Links_international",
+            "@FreeAdsCenter",
+            "@linkexchangers",
+            "@ServerGpp",
+            "@tablight11223",
+            "@freeGaap",
+            "@LincExchange1",
+            "@free_promotion_airdrop_links",
+            "@Share_Links_Here_For_Free_PROMO"
+          ],
           "enabled": true,
           "paused": false,
           "mode": "forward"
