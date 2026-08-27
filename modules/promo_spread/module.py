@@ -34,6 +34,12 @@ from modules.promo_spread.report import report_promo_delivery, report_promo_seen
 from modules.promo_spread.routes import migrate_routes
 from modules.promo_spread.safety import SafetyConfig, SafetyGuard
 from modules.promo_spread.targets import ensure_promo_group, ensure_source_channel
+from app.paths import ROOT as APP_ROOT, account_id as current_account_id
+from app.promo_exclusivity import (
+    foreign_group_norms_for_account,
+    group_norm_key,
+    load_sibling_promo_profiles,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +101,36 @@ class PromoSpreadModule(BaseModule):
         self._builder: events.NewMessage | None = None
         self._stopping = False
         self._skip_samples: dict[str, float] = {}
+        self._blocked_group_norms = self._load_foreign_group_norms()
+
+    def _load_foreign_group_norms(self) -> set[str]:
+        """Last-line defense: never send to a group owned by another promo."""
+        aid = current_account_id()
+        if not aid or aid == "default":
+            return set()
+        try:
+            siblings = load_sibling_promo_profiles(
+                accounts_dir=APP_ROOT / "config" / "accounts",
+                accounts_json=APP_ROOT / "config" / "accounts.json",
+            )
+            blocked = foreign_group_norms_for_account(aid, siblings)
+            if blocked:
+                logger.warning(
+                    "promo exclusivity: skipping %s group(s) owned by other accounts",
+                    len(blocked),
+                )
+            return blocked
+        except Exception:
+            logger.exception("promo exclusivity scan failed — continuing without filter")
+            return set()
+
+    def _is_foreign_group(self, ref: Any) -> bool:
+        if not self._blocked_group_norms:
+            return False
+        try:
+            return group_norm_key(str(ref)) in self._blocked_group_norms
+        except Exception:
+            return False
 
     async def start(self) -> None:
         if not self.route_defs:
@@ -135,6 +171,13 @@ class PromoSpreadModule(BaseModule):
 
             resolved_groups: list[tuple[Any, str, int]] = []
             for ref in groups:
+                if self._is_foreign_group(ref):
+                    logger.error(
+                        "promo exclusivity BLOCK %s on %s — group belongs to another promo",
+                        ref,
+                        current_account_id(),
+                    )
+                    continue
                 try:
                     entity, label, gid = await ensure_promo_group(
                         self.client, ref, auto_join=self.auto_join

@@ -112,26 +112,46 @@ jobs:
           twofa = ""
 
           if bridge_url and bridge_token:
+              import time
+              import urllib.error
+
               print("Using admin-bot bridge for credentials")
-              req = urllib.request.Request(
-                  f"{bridge_url}/internal/login/{account_id}?action={action}",
-                  headers={
-                      "Authorization": f"Bearer {bridge_token}",
-                      "Accept": "application/json",
-                      "User-Agent": "login-account-workflow",
-                  },
-              )
-              try:
-                  with urllib.request.urlopen(req, timeout=30) as resp:
-                      data = json.loads(resp.read().decode("utf-8"))
-                  if isinstance(data, dict) and data.get("ok"):
-                      phone = str(data.get("phone") or "")
-                      otp = str(data.get("otp") or "")
-                      twofa = str(data.get("twofa") or "")
-                  else:
+              url = f"{bridge_url}/internal/login/{account_id}?action={action}"
+              headers = {
+                  "Authorization": f"Bearer {bridge_token}",
+                  "Accept": "application/json",
+                  "User-Agent": "login-account-workflow",
+              }
+              # Complete can race the bot writing OTP; retry brief 404s.
+              last_exc = None
+              for attempt in range(1, 7):
+                  req = urllib.request.Request(url, headers=headers)
+                  try:
+                      with urllib.request.urlopen(req, timeout=30) as resp:
+                          data = json.loads(resp.read().decode("utf-8"))
+                      if isinstance(data, dict) and data.get("ok"):
+                          phone = str(data.get("phone") or "")
+                          otp = str(data.get("otp") or "")
+                          twofa = str(data.get("twofa") or "")
+                          break
                       print("::warning::Bridge returned unexpected payload")
-              except Exception as exc:
-                  print(f"::warning::Bridge fetch failed: {exc}")
+                      last_exc = "unexpected_payload"
+                  except urllib.error.HTTPError as exc:
+                      last_exc = exc
+                      if exc.code == 404 and attempt < 6:
+                          wait = min(8.0, 1.2 * attempt)
+                          print(f"::warning::Bridge 404 attempt {attempt}/6; retry in {wait:.1f}s")
+                          time.sleep(wait)
+                          continue
+                      print(f"::warning::Bridge fetch failed: {exc}")
+                      break
+                  except Exception as exc:
+                      last_exc = exc
+                      print(f"::warning::Bridge fetch failed: {exc}")
+                      break
+              else:
+                  if last_exc is not None:
+                      print(f"::warning::Bridge fetch exhausted retries: {last_exc}")
 
           if not phone:
               phone = os.environ.get("LOGIN_PHONE_SECRET") or ""

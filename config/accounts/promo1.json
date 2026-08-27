@@ -34,20 +34,9 @@
         {
           "source": "@aads_posts",
           "groups": [
-            "@ShareTelegramInviteLinks",
-            "@LinkExchangeAcacia",
-            "@Dailylinkexchange",
-            "@ghrohsabt",
             "@sabt_raygan1",
             "@YZBAR8xbHMIzOTA0",
-            "@tabligatazadir",
-            "@TechnicLinks",
-            "@swgrouplinks",
-            "@freelink_Exchange",
-            "@linkazadddddlinkazaddddd",
-            "@FreeAdsCenter1",
-            "@linkexchangers",
-            "@free_linka"
+            "@TechnicLinks"
           ],
           "enabled": true,
           "paused": false,
