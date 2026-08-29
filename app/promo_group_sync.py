@@ -28,8 +28,31 @@ def _is_truthy(value: Any) -> bool:
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _load_promo_ready_payload(*, limit: int) -> dict[str, Any] | None:
+    """Bridge first; fall back to the cached pool export used on CI runners."""
+    payload = export_promo_ready(limit=limit)
+    if payload and isinstance(payload, dict) and isinstance(payload.get("items"), list):
+        return payload
+
+    local = ROOT / "data" / "pool" / "linkdir_promo_ready.json"
+    if not local.is_file():
+        return None
+    try:
+        cached = json.loads(local.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if not isinstance(cached, dict):
+        return None
+    items = cached.get("items")
+    if not isinstance(items, list):
+        return None
+    if limit > 0:
+        items = items[:limit]
+    return {"items": items, "source": "local_pool"}
+
+
 def _collect_promo_profiles() -> list[tuple[str, dict[str, Any]]]:
-    """Return (account_id, profile) for every promo_spread-capable account."""
+    """Return (account_id, profile) for every enabled promo_spread-capable account."""
     accounts_json = CONFIG_DIR / "accounts.json"
     if not accounts_json.exists():
         return []
@@ -41,6 +64,8 @@ def _collect_promo_profiles() -> list[tuple[str, dict[str, Any]]]:
     out: list[tuple[str, dict[str, Any]]] = []
     for row in rows:
         if not isinstance(row, dict):
+            continue
+        if row.get("enabled") is False:
             continue
         account_id = str(row.get("id") or "").strip()
         if not account_id:
@@ -140,10 +165,10 @@ def sync() -> int:
             "Add one in the bot (تبلیغ → مسیرها → ➕ کانال تبلیغ) first."
         )
 
-    payload = export_promo_ready(limit=export_limit)
-    if not payload or not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+    payload = _load_promo_ready_payload(limit=export_limit)
+    if not payload or not isinstance(payload.get("items"), list):
         raise SystemExit(
-            "export_promo_ready() returned no payload (bridge missing/unavailable?)."
+            "No promo_ready catalog (bridge unavailable and data/pool/linkdir_promo_ready.json missing?)."
         )
 
     candidates: list[dict[str, Any]] = []
@@ -261,7 +286,7 @@ def sync() -> int:
         f"promo_group_sync: updated promo routes for {len(eligible_accounts)} "
         f"account(s) claimed={claimed} skipped_owned={skipped_owned} "
         f"overlaps_fixed="
-        f"{reconcile.get('overlaps_before', 0)}→{reconcile.get('overlaps_after', 0)} "
+        f"{reconcile.get('overlaps_before', 0)}->{reconcile.get('overlaps_after', 0)} "
         f"(dry_run={dry_run})."
     )
     return 0

@@ -19,6 +19,7 @@ from telethon.errors import (
     UserNotParticipantError,
 )
 from telethon.tl.functions.channels import GetParticipantRequest, JoinChannelRequest
+from telethon.tl.functions.contacts import ResolveUsernameRequest
 from telethon.tl.functions.messages import CheckChatInviteRequest, ImportChatInviteRequest
 from telethon.tl.types import Channel, Chat, ChatInvite, ChatInviteAlready
 
@@ -108,11 +109,48 @@ async def _resolve_invite(client: TelegramClient, ref: Any, *, auto_join: bool =
     raise ValueError(f"پاسخ ناشناخته برای لینک دعوت: `{display_ref(ref)}`")
 
 
-async def resolve_entity(client: TelegramClient, ref: Any, *, auto_join: bool = True):
+async def resolve_entity(
+    client: TelegramClient,
+    ref: Any,
+    *,
+    auto_join: bool = True,
+    use_cache: bool = True,
+):
     if invite_hash(ref):
         return await _resolve_invite(client, ref, auto_join=auto_join)
     normalized = normalize_ref(ref)
-    return await client.get_entity(normalized)
+    return await client.get_entity(normalized, use_cache=use_cache)
+
+
+def _username_from_ref(ref: Any) -> str | None:
+    if not isinstance(ref, str):
+        return None
+    text = ref.strip()
+    if not text.startswith("@"):
+        return None
+    return text[1:].split("/")[0] or None
+
+
+async def _resolve_broadcast_by_username(
+    client: TelegramClient,
+    username: str,
+) -> Channel | None:
+    """Fresh username lookup — bypasses stale session entity cache."""
+    uname = str(username or "").strip().lstrip("@")
+    if not uname:
+        return None
+    try:
+        resolved = await client(ResolveUsernameRequest(uname))
+    except RPCError:
+        return None
+    for chat in getattr(resolved, "chats", None) or []:
+        if _is_broadcast_channel(chat):
+            return chat
+    return None
+
+
+def _is_broadcast_channel(entity: Any) -> bool:
+    return bool(getattr(entity, "broadcast", False))
 
 
 async def ensure_source_channel(
@@ -122,7 +160,21 @@ async def ensure_source_channel(
     auto_join: bool = True,
 ) -> tuple[Any, str]:
     entity = await resolve_entity(client, ref, auto_join=auto_join)
-    if not isinstance(entity, Channel) or not bool(getattr(entity, "broadcast", False)):
+    if not _is_broadcast_channel(entity):
+        # Session cache can map @username to an old megagroup id; re-resolve live.
+        uname = _username_from_ref(ref)
+        if uname:
+            fresh = await _resolve_broadcast_by_username(client, uname)
+            if fresh is not None:
+                entity = fresh
+            else:
+                try:
+                    entity = await resolve_entity(
+                        client, ref, auto_join=auto_join, use_cache=False
+                    )
+                except RPCError:
+                    pass
+    if not _is_broadcast_channel(entity):
         raise ValueError("منبع باید یک کانال (broadcast) باشد، نه گروه")
 
     me = await client.get_me()

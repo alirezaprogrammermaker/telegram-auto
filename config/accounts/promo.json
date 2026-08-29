@@ -13,7 +13,7 @@
       "enabled": false
     },
     "promo_spread": {
-      "enabled": true,
+      "enabled": false,
       "dry_run": true,
       "paused": false,
       "mode": "forward",

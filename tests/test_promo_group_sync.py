@@ -66,6 +66,43 @@ def test_sync_requires_registered_ad_channel(tmp_path: Path, monkeypatch) -> Non
         assert "ad channels" in str(exc).lower() or "Add one" in str(exc)
 
 
+def test_sync_uses_local_pool_when_bridge_empty(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setattr(sync_mod, "ROOT", tmp_path)
+    monkeypatch.setattr(sync_mod, "CONFIG_DIR", tmp_path / "config")
+    monkeypatch.setattr(sync_mod, "ACCOUNTS_DIR", tmp_path / "config" / "accounts")
+    monkeypatch.setenv("DRY_RUN", "false")
+    monkeypatch.setenv("PROMO_RANK_MIN", "0")
+    monkeypatch.setenv("PROMO_NEED_POSTABLE", "false")
+    _write_promo_account(tmp_path, "promo1", sources=["@MyAds"])
+
+    pool = tmp_path / "data" / "pool"
+    pool.mkdir(parents=True)
+    (pool / "linkdir_promo_ready.json").write_text(
+        json.dumps(
+            {
+                "items": [
+                    {
+                        "ref": "@from_pool",
+                        "rank_score": 0.95,
+                        "members_can_send": True,
+                    }
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    with patch.object(sync_mod, "export_promo_ready", return_value=None):
+        assert sync_mod.sync() == 0
+
+    profile = json.loads(
+        (tmp_path / "config" / "accounts" / "promo1.json").read_text(encoding="utf-8")
+    )
+    groups = profile["modules"]["promo_spread"]["routes"][0]["groups"]
+    assert "@from_pool" in groups
+
+
 def test_sync_attaches_groups_to_registered_channel_not_parent_seed(
     tmp_path: Path, monkeypatch
 ) -> None:
