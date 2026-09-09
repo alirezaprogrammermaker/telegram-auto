@@ -114,12 +114,11 @@ async def resolve_entity(
     ref: Any,
     *,
     auto_join: bool = True,
-    use_cache: bool = True,
 ):
     if invite_hash(ref):
         return await _resolve_invite(client, ref, auto_join=auto_join)
     normalized = normalize_ref(ref)
-    return await client.get_entity(normalized, use_cache=use_cache)
+    return await client.get_entity(normalized)
 
 
 def _username_from_ref(ref: Any) -> str | None:
@@ -167,13 +166,6 @@ async def ensure_source_channel(
             fresh = await _resolve_broadcast_by_username(client, uname)
             if fresh is not None:
                 entity = fresh
-            else:
-                try:
-                    entity = await resolve_entity(
-                        client, ref, auto_join=auto_join, use_cache=False
-                    )
-                except RPCError:
-                    pass
     if not _is_broadcast_channel(entity):
         raise ValueError("منبع باید یک کانال (broadcast) باشد، نه گروه")
 

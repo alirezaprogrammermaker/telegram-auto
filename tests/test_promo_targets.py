@@ -25,7 +25,7 @@ async def test_ensure_source_channel_refreshes_stale_megagroup_cache() -> None:
     stale = _channel(channel_id=100, broadcast=False, username="aads_posts")
     fresh = _channel(channel_id=200, broadcast=True, username="aads_posts")
     client = AsyncMock()
-    client.get_entity = AsyncMock(side_effect=[stale, fresh])
+    client.get_entity = AsyncMock(return_value=stale)
     client.get_me = AsyncMock(return_value=MagicMock())
     client.return_value = SimpleNamespace(chats=[fresh], users=[])
 
@@ -34,6 +34,7 @@ async def test_ensure_source_channel_refreshes_stale_megagroup_cache() -> None:
     )
     assert entity is fresh
     assert label == "@aads_posts"
+    client.get_entity.assert_awaited_once()
 
 
 @pytest.mark.asyncio
