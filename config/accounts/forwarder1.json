@@ -74,8 +74,6 @@
           "enabled": true,
           "paused": false,
           "forward_mode": null,
-          "owner_id": 716558954,
-          "visibility": "private",
           "filter": {
             "enabled": true,
             "remove_links": true,
@@ -144,7 +142,9 @@
             "preserve_reply": false,
             "media_prefix": "",
             "media_suffix": ""
-          }
+          },
+          "owner_id": 716558954,
+          "visibility": "private"
         },
         {
           "source": "@FoOdDeCooR",
@@ -155,8 +155,6 @@
           "enabled": true,
           "paused": false,
           "forward_mode": null,
-          "owner_id": 716558954,
-          "visibility": "private",
           "filter": {
             "enabled": true,
             "remove_links": true,
@@ -211,6 +209,63 @@
                 "end": "22:00"
               }
             ]
+          },
+          "dedup": {
+            "enabled": false,
+            "window_hours": 24
+          },
+          "delivery": {
+            "pin_latest": false,
+            "button_text": "",
+            "button_url": "",
+            "sync_edits": true,
+            "sync_deletes": true,
+            "preserve_reply": false,
+            "media_prefix": "",
+            "media_suffix": ""
+          },
+          "owner_id": 716558954,
+          "visibility": "private"
+        },
+        {
+          "source": "@noonesir",
+          "destination": "@ashapazi_roozaneh",
+          "destinations": [
+            "@ashapazi_roozaneh"
+          ],
+          "enabled": true,
+          "paused": false,
+          "forward_mode": null,
+          "owner_id": 716558954,
+          "visibility": "private",
+          "filter": {
+            "enabled": false,
+            "remove_links": false,
+            "remove_mentions": false,
+            "remove_hashtags": false,
+            "remove_ids": false,
+            "prefix": "",
+            "suffix": "",
+            "collapse_whitespace": true,
+            "block_enabled": false,
+            "block_words": [],
+            "allow_enabled": false,
+            "allow_words": [],
+            "regex_enabled": false,
+            "regex_pattern": "",
+            "regex_must_match": true,
+            "link_replacements": {}
+          },
+          "media_filter": {
+            "enabled": false,
+            "allow": [],
+            "deny": []
+          },
+          "schedule": {
+            "enabled": false,
+            "timezone": "Asia/Tehran",
+            "days": [],
+            "windows": []
           },
           "dedup": {
             "enabled": false,
