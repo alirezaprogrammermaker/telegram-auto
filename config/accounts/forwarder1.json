@@ -120,7 +120,9 @@
             "media_suffix": ""
           }
         }
-      ]
+      ],
+      "paused": false,
+      "dry_run": false
     },
     "digest": {
       "enabled": true
