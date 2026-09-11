@@ -77,13 +77,13 @@
           "owner_id": 716558954,
           "visibility": "private",
           "filter": {
-            "enabled": false,
-            "remove_links": false,
+            "enabled": true,
+            "remove_links": true,
             "remove_mentions": false,
             "remove_hashtags": false,
-            "remove_ids": false,
+            "remove_ids": true,
             "prefix": "",
-            "suffix": "",
+            "suffix": "@ashapazi_roozaneh",
             "collapse_whitespace": true,
             "block_enabled": false,
             "block_words": [],
@@ -92,7 +92,12 @@
             "regex_enabled": false,
             "regex_pattern": "",
             "regex_must_match": true,
-            "link_replacements": {}
+            "link_replacements": {
+              "@ide_food": "@ashapazi_roozaneh",
+              "t.me/ide_food": "@ashapazi_roozaneh",
+              "https://t.me/ide_food": "@ashapazi_roozaneh",
+              "http://t.me/ide_food": "@ashapazi_roozaneh"
+            }
           },
           "media_filter": {
             "enabled": false,
