@@ -105,10 +105,31 @@
             "deny": []
           },
           "schedule": {
-            "enabled": false,
+            "enabled": true,
             "timezone": "Asia/Tehran",
-            "days": [],
-            "windows": []
+            "days": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "windows": [
+              {
+                "start": "09:00",
+                "end": "11:00"
+              },
+              {
+                "start": "13:00",
+                "end": "15:00"
+              },
+              {
+                "start": "19:00",
+                "end": "22:00"
+              }
+            ]
           },
           "dedup": {
             "enabled": false,
