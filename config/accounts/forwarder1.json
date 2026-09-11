@@ -239,13 +239,13 @@
           "owner_id": 716558954,
           "visibility": "private",
           "filter": {
-            "enabled": false,
-            "remove_links": false,
+            "enabled": true,
+            "remove_links": true,
             "remove_mentions": false,
             "remove_hashtags": false,
-            "remove_ids": false,
+            "remove_ids": true,
             "prefix": "",
-            "suffix": "",
+            "suffix": "@ashapazi_roozaneh",
             "collapse_whitespace": true,
             "block_enabled": false,
             "block_words": [],
@@ -254,7 +254,12 @@
             "regex_enabled": false,
             "regex_pattern": "",
             "regex_must_match": true,
-            "link_replacements": {}
+            "link_replacements": {
+              "@noonesir": "@ashapazi_roozaneh",
+              "t.me/noonesir": "@ashapazi_roozaneh",
+              "https://t.me/noonesir": "@ashapazi_roozaneh",
+              "http://t.me/noonesir": "@ashapazi_roozaneh"
+            }
           },
           "media_filter": {
             "enabled": false,
@@ -262,10 +267,31 @@
             "deny": []
           },
           "schedule": {
-            "enabled": false,
+            "enabled": true,
             "timezone": "Asia/Tehran",
-            "days": [],
-            "windows": []
+            "days": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "windows": [
+              {
+                "start": "09:00",
+                "end": "11:00"
+              },
+              {
+                "start": "13:00",
+                "end": "15:00"
+              },
+              {
+                "start": "19:00",
+                "end": "22:00"
+              }
+            ]
           },
           "dedup": {
             "enabled": false,
