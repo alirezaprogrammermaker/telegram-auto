@@ -74,8 +74,6 @@
           "enabled": true,
           "paused": false,
           "forward_mode": null,
-          "owner_id": 716558954,
-          "visibility": "private",
           "filter": {
             "enabled": true,
             "remove_links": true,
@@ -144,7 +142,9 @@
             "preserve_reply": false,
             "media_prefix": "",
             "media_suffix": ""
-          }
+          },
+          "owner_id": 716558954,
+          "visibility": "private"
         }
       ],
       "paused": false,
