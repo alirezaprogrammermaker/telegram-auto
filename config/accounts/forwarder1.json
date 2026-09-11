@@ -74,6 +74,8 @@
           "enabled": true,
           "paused": false,
           "forward_mode": null,
+          "owner_id": 716558954,
+          "visibility": "private",
           "filter": {
             "enabled": true,
             "remove_links": true,
@@ -142,64 +144,7 @@
             "preserve_reply": false,
             "media_prefix": "",
             "media_suffix": ""
-          },
-          "owner_id": 716558954,
-          "visibility": "public"
-        },
-        {
-          "source": "@Cookwhen",
-          "destination": "@ashapazi_roozaneh",
-          "destinations": [
-            "@ashapazi_roozaneh"
-          ],
-          "enabled": true,
-          "paused": false,
-          "forward_mode": null,
-          "filter": {
-            "enabled": false,
-            "remove_links": false,
-            "remove_mentions": false,
-            "remove_hashtags": false,
-            "remove_ids": false,
-            "prefix": "",
-            "suffix": "",
-            "collapse_whitespace": true,
-            "block_enabled": false,
-            "block_words": [],
-            "allow_enabled": false,
-            "allow_words": [],
-            "regex_enabled": false,
-            "regex_pattern": "",
-            "regex_must_match": true,
-            "link_replacements": {}
-          },
-          "media_filter": {
-            "enabled": false,
-            "allow": [],
-            "deny": []
-          },
-          "schedule": {
-            "enabled": false,
-            "timezone": "Asia/Tehran",
-            "days": [],
-            "windows": []
-          },
-          "dedup": {
-            "enabled": false,
-            "window_hours": 24
-          },
-          "delivery": {
-            "pin_latest": false,
-            "button_text": "",
-            "button_url": "",
-            "sync_edits": true,
-            "sync_deletes": true,
-            "preserve_reply": false,
-            "media_prefix": "",
-            "media_suffix": ""
-          },
-          "owner_id": 716558954,
-          "visibility": "private"
+          }
         },
         {
           "source": "@FoOdDeCooR",
@@ -209,15 +154,17 @@
           ],
           "enabled": true,
           "paused": false,
-          "forward_mode": "copy",
+          "forward_mode": null,
+          "owner_id": 716558954,
+          "visibility": "private",
           "filter": {
             "enabled": true,
-            "remove_links": false,
+            "remove_links": true,
             "remove_mentions": false,
             "remove_hashtags": false,
-            "remove_ids": false,
+            "remove_ids": true,
             "prefix": "",
-            "suffix": "",
+            "suffix": "@ashapazi_roozaneh",
             "collapse_whitespace": true,
             "block_enabled": false,
             "block_words": [],
@@ -226,7 +173,12 @@
             "regex_enabled": false,
             "regex_pattern": "",
             "regex_must_match": true,
-            "link_replacements": {}
+            "link_replacements": {
+              "@FoOdDeCooR": "@ashapazi_roozaneh",
+              "t.me/FoOdDeCooR": "@ashapazi_roozaneh",
+              "https://t.me/FoOdDeCooR": "@ashapazi_roozaneh",
+              "http://t.me/FoOdDeCooR": "@ashapazi_roozaneh"
+            }
           },
           "media_filter": {
             "enabled": false,
@@ -234,10 +186,31 @@
             "deny": []
           },
           "schedule": {
-            "enabled": false,
+            "enabled": true,
             "timezone": "Asia/Tehran",
-            "days": [],
-            "windows": []
+            "days": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ],
+            "windows": [
+              {
+                "start": "09:00",
+                "end": "11:00"
+              },
+              {
+                "start": "13:00",
+                "end": "15:00"
+              },
+              {
+                "start": "19:00",
+                "end": "22:00"
+              }
+            ]
           },
           "dedup": {
             "enabled": false,
@@ -252,9 +225,7 @@
             "preserve_reply": false,
             "media_prefix": "",
             "media_suffix": ""
-          },
-          "owner_id": 716558954,
-          "visibility": "private"
+          }
         }
       ],
       "paused": false,
