@@ -212,7 +212,7 @@
           "forward_mode": "copy",
           "filter": {
             "enabled": true,
-            "remove_links": true,
+            "remove_links": false,
             "remove_mentions": false,
             "remove_hashtags": false,
             "remove_ids": false,
