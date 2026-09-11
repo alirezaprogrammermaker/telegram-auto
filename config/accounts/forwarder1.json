@@ -211,7 +211,7 @@
           "paused": false,
           "forward_mode": "copy",
           "filter": {
-            "enabled": false,
+            "enabled": true,
             "remove_links": false,
             "remove_mentions": false,
             "remove_hashtags": false,
