@@ -15,6 +15,7 @@ from modules.channel_forward.dedup import DedupStore, content_fingerprint
 from modules.channel_forward.filters import TextFilterConfig, apply_text_filter, matches_content_rules
 from modules.channel_forward.media_filter import media_allowed
 from modules.channel_forward.queue import PublishQueue
+from modules.channel_forward.quota import DailyQuotaStore, dest_quota_key
 from modules.channel_forward.route_config import ResolvedRoute
 from modules.channel_forward.state import ForwardStateStore
 
@@ -49,12 +50,14 @@ class DeliveryEngine:
         delay_jitter: float = 0.0,
         dry_run: bool = False,
         alert_fn: AlertFn | None = None,
+        quota: DailyQuotaStore | None = None,
     ) -> None:
         self.client = client
         self.queue = queue
         self.stats = stats
         self.state = state
         self.dedup = dedup
+        self.quota = quota or DailyQuotaStore()
         self.delay_seconds = max(0.0, delay_seconds)
         self.delay_jitter = max(0.0, delay_jitter)
         self.dry_run = dry_run
@@ -116,6 +119,10 @@ class DeliveryEngine:
             self.stats.incr("queued", route=route.route_key)
             return False
 
+        if self.daily_cap_reached(route):
+            self._skip_daily_cap(messages, route)
+            return False
+
         if self.dry_run:
             logger.info(
                 "DRY-RUN would forward %s ids=%s route=%s",
@@ -126,10 +133,62 @@ class DeliveryEngine:
             self.stats.incr("dry_run", route=route.route_key)
             return True
 
-        ok = await self._deliver(messages, route, from_queue=from_queue)
+        consumed = False
+        limit = self._daily_limit(route)
+        if limit > 0:
+            if not self.quota.try_consume(
+                self._quota_key(route),
+                limit=limit,
+                timezone=route.schedule.timezone,
+            ):
+                self._skip_daily_cap(messages, route)
+                return False
+            consumed = True
+
+        ok = False
+        try:
+            ok = await self._deliver(messages, route, from_queue=from_queue)
+        finally:
+            if consumed and not ok:
+                self.quota.refund(
+                    self._quota_key(route),
+                    timezone=route.schedule.timezone,
+                )
         if ok and route.dedup.enabled:
             self.dedup.remember(route.route_key, fp)
         return ok
+
+    def _daily_limit(self, route: ResolvedRoute) -> int:
+        try:
+            return max(0, int(route.schedule.max_posts_per_day or 0))
+        except (TypeError, ValueError):
+            return 0
+
+    def _quota_key(self, route: ResolvedRoute) -> str:
+        return dest_quota_key(route.dest_ref)
+
+    def daily_cap_reached(self, route: ResolvedRoute) -> bool:
+        limit = self._daily_limit(route)
+        if limit <= 0:
+            return False
+        return self.quota.at_limit(
+            self._quota_key(route),
+            limit=limit,
+            timezone=route.schedule.timezone,
+        )
+
+    def _skip_daily_cap(self, messages: list[Message], route: ResolvedRoute) -> None:
+        ids = [m.id for m in messages if getattr(m, "id", None)]
+        logger.info(
+            "Daily cap skip dest=%s route=%s ids=%s limit=%s",
+            self._quota_key(route),
+            route.route_key,
+            ids,
+            self._daily_limit(route),
+        )
+        self.stats.incr("daily_cap_skipped", route=route.route_key)
+        if ids:
+            self.state.set_last_seen(route.route_key, max(ids))
 
     async def _deliver(
         self,

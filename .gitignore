@@ -28,6 +28,7 @@ tests/*
 !tests/test_login*.py
 !tests/test_promo*.py
 !tests/test_telemetry.py
+!tests/test_channel_forward*.py
 !tests/__init__.py
 .playwright-mcp/
 .wrangler/

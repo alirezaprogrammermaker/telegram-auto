@@ -90,6 +90,22 @@ class PublishQueue:
                     break
             self._save()
 
+    def mark_skipped(self, item_id: str, reason: str = "") -> None:
+        with _lock:
+            self._data = load_json(self.path, {"items": []})
+            for item in self._data.get("items", []):
+                if item.get("id") == item_id:
+                    item["status"] = "skipped"
+                    item["skip_reason"] = (reason or "")[:300]
+                    item["skipped_at"] = datetime.now(timezone.utc).isoformat()
+                    break
+            items = self._data.get("items", [])
+            pending = [i for i in items if i.get("status") == "pending"]
+            closed = [i for i in items if i.get("status") in {"done", "skipped"}]
+            failed = [i for i in items if i.get("status") == "failed"]
+            self._data["items"] = pending + failed + closed[-200:]
+            self._save()
+
     def pending_count(self) -> int:
         return len(self.list_pending())
 

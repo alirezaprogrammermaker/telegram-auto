@@ -81,6 +81,8 @@ class ScheduleConfig:
     timezone: str = DEFAULT_TIMEZONE
     days: list[str] = field(default_factory=lambda: list(_DAY_NAMES))
     windows: list[ScheduleWindow] = field(default_factory=list)
+    # 0 = unlimited. Shared across all routes to the same destination.
+    max_posts_per_day: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -88,6 +90,7 @@ class ScheduleConfig:
             "timezone": self.timezone,
             "days": list(self.days),
             "windows": [w.to_dict() for w in self.windows],
+            "max_posts_per_day": self.max_posts_per_day,
         }
 
     @classmethod
@@ -117,11 +120,17 @@ class ScheduleConfig:
         except ZoneInfoNotFoundError:
             tz = DEFAULT_TIMEZONE
 
+        try:
+            max_posts = int(data.get("max_posts_per_day") or 0)
+        except (TypeError, ValueError):
+            max_posts = 0
+
         return cls(
             enabled=bool(data.get("enabled", False)),
             timezone=tz,
             days=days,
             windows=windows,
+            max_posts_per_day=max(0, max_posts),
         )
 
     def tzinfo(self) -> ZoneInfo:
@@ -162,6 +171,8 @@ class ScheduleConfig:
         else:
             for w in self.windows:
                 lines.append(f"window: {w.start}-{w.end}")
+        if self.max_posts_per_day > 0:
+            lines.append(f"max_posts_per_day: {self.max_posts_per_day} (per destination)")
         open_now = self.is_open()
         lines.append(f"now_open: {'YES' if open_now else 'NO'} ({self.now().strftime('%Y-%m-%d %H:%M')})")
         return lines
