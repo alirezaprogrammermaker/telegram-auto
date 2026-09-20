@@ -160,18 +160,11 @@
             ],
             "windows": [
               {
-                "start": "09:00",
-                "end": "11:00"
-              },
-              {
-                "start": "13:00",
-                "end": "15:00"
-              },
-              {
-                "start": "19:00",
-                "end": "22:00"
+                "start": "22:00",
+                "end": "22:10"
               }
-            ]
+            ],
+            "max_posts_per_day": 1
           },
           "dedup": {
             "enabled": false,
@@ -196,8 +189,8 @@
           "destinations": [
             "@ashapazi_roozaneh"
           ],
-          "enabled": true,
-          "paused": false,
+          "enabled": false,
+          "paused": true,
           "forward_mode": null,
           "filter": {
             "enabled": true,
@@ -285,18 +278,11 @@
             ],
             "windows": [
               {
-                "start": "09:00",
-                "end": "11:00"
-              },
-              {
-                "start": "13:00",
-                "end": "15:00"
-              },
-              {
-                "start": "19:00",
-                "end": "22:00"
+                "start": "22:00",
+                "end": "22:10"
               }
-            ]
+            ],
+            "max_posts_per_day": 1
           },
           "dedup": {
             "enabled": false,
@@ -321,8 +307,8 @@
           "destinations": [
             "@ashapazi_roozaneh"
           ],
-          "enabled": true,
-          "paused": false,
+          "enabled": false,
+          "paused": true,
           "forward_mode": null,
           "owner_id": 716558954,
           "visibility": "private",
@@ -412,18 +398,11 @@
             ],
             "windows": [
               {
-                "start": "09:00",
-                "end": "11:00"
-              },
-              {
-                "start": "13:00",
-                "end": "15:00"
-              },
-              {
-                "start": "19:00",
-                "end": "22:00"
+                "start": "22:00",
+                "end": "22:10"
               }
-            ]
+            ],
+            "max_posts_per_day": 1
           },
           "dedup": {
             "enabled": false,

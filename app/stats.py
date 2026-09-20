@@ -100,6 +100,7 @@ class StatsStore:
                 lines.append(f"• فیلتر/رد محتوا: {b.get('filtered_skip', 0)}")
                 lines.append(f"• رد رسانه: {b.get('media_skipped', 0)}")
                 lines.append(f"• dedup: {b.get('dedup_skipped', 0)}")
+                lines.append(f"• سقف روزانه: {b.get('daily_cap_skipped', 0)}")
                 lines.append(f"• dry-run: {b.get('dry_run', 0)}")
                 lines.append(f"• خطا: {b.get('failed', 0)}")
                 routes = b.get("routes") or {}

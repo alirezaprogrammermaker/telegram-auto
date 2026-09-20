@@ -20,6 +20,7 @@ from modules.channel_forward.catchup import catch_up_routes
 from modules.channel_forward.dedup import DedupStore
 from modules.channel_forward.delivery import DeliveryEngine
 from modules.channel_forward.queue import PublishQueue
+from modules.channel_forward.quota import DailyQuotaStore
 from modules.channel_forward.refs import display_ref, entity_label
 from modules.channel_forward.route_config import (
     ResolvedRoute,
@@ -87,6 +88,7 @@ class ChannelForwardModule(BaseModule):
         self._stats = StatsStore()
         self._state = ForwardStateStore()
         self._dedup = DedupStore()
+        self._quota = DailyQuotaStore()
         self._engine: DeliveryEngine | None = None
         self._publisher_task: asyncio.Task[None] | None = None
         self._report_task: asyncio.Task[None] | None = None
@@ -104,6 +106,7 @@ class ChannelForwardModule(BaseModule):
             stats=self._stats,
             state=self._state,
             dedup=self._dedup,
+            quota=self._quota,
             delay_seconds=self.delay,
             delay_jitter=self.delay_jitter,
             dry_run=self.dry_run,
@@ -286,6 +289,8 @@ class ChannelForwardModule(BaseModule):
                 ok = await self._engine.process_messages(messages, route, from_queue=True)
                 if ok:
                     self._queue.mark_done(str(item["id"]))
+                elif self._engine.daily_cap_reached(route):
+                    self._queue.mark_skipped(str(item["id"]), "daily_cap")
             except Exception as exc:
                 logger.exception("failed publishing queued item %s", item.get("id"))
                 self._queue.mark_failed(str(item["id"]), str(exc))
