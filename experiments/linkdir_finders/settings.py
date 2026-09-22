@@ -20,8 +20,8 @@ _DEFAULTS: dict[str, Any] = {
         "links directory",
     ],
     "safety": {
-        "allow_joins": False,
-        "daily_joins": 0,
+        "allow_joins": True,
+        "daily_joins": 6,
         "daily_seed_reads": 32,
         "daily_resolve_usernames": 45,
         "daily_invite_peeks": 26,
@@ -36,6 +36,14 @@ _DEFAULTS: dict[str, Any] = {
         "delay_invite_max": 12.0,
         "delay_hop_min": 10.0,
         "delay_hop_max": 20.0,
+    },
+    "verify_postable": {
+        "experiment_until": "2026-09-24",
+        "per_run_limit": 6,
+        "min_rank": 50,
+        "min_identity": 35,
+        "sample": 15,
+        "leave_after": True,
     },
     "search": {
         "limit": 15,

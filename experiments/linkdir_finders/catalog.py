@@ -602,6 +602,9 @@ class LinkDirCatalog:
                     "identity_score": r.get("identity_score"),
                     "quality_score": r.get("quality_score"),
                     "last_ranked_at": r.get("last_ranked_at"),
+                    "kind": r.get("kind"),
+                    "members_can_send": r.get("members_can_send"),
+                    "postable": r.get("postable") if r.get("postable") is not None else (r.get("members_can_send") is True),
                     "activity": {
                         "last_message_age_hours": (r.get("activity") or {}).get(
                             "last_message_age_hours"

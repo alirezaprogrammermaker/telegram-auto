@@ -177,8 +177,12 @@ def sync() -> int:
             continue
         if not it.get("ref"):
             continue
-        if bool(it.get("members_can_send")) is not True and threshold_members_can_send:
-            continue
+        members_can_send = it.get("members_can_send")
+        postable = it.get("postable")
+        if threshold_members_can_send:
+            # Accept explicit True send-rights OR legacy export `postable=True`.
+            if members_can_send is not True and postable is not True:
+                continue
         try:
             rank_score = float(it.get("rank_score") or 0)
         except ValueError:

@@ -169,6 +169,24 @@ async def run_once(
                 summary["errors"].append(f"rerank:{type(exc).__name__}:{exc}")
                 logger.exception("rerank step failed")
 
+        if "verify_postable" in steps:
+            try:
+                from experiments.linkdir_finders.method_verify_postable import (
+                    run_verify_postable,
+                )
+
+                summary["results"]["verify_postable"] = await run_verify_postable(
+                    session=used_session,
+                    cfg=config,
+                    client=client,
+                    own_client=False,
+                    collector_id=collector_id,
+                )
+            except Exception as exc:  # noqa: BLE001
+                summary["ok"] = False
+                summary["errors"].append(f"verify_postable:{type(exc).__name__}:{exc}")
+                logger.exception("verify_postable step failed")
+
         # Always refresh export at end
         catalog = LinkDirCatalog(collector_id=collector_id)
         stale_n = catalog.mark_stale(
@@ -302,7 +320,7 @@ def _parse_steps(raw: str | None, cfg: dict[str, Any]) -> list[str]:
         steps = list(
             (cfg.get("pipeline") or {}).get("steps") or ["search", "snowball", "rerank"]
         )
-    allowed = {"search", "snowball", "rerank"}
+    allowed = {"search", "snowball", "rerank", "verify_postable"}
     bad = [s for s in steps if s not in allowed]
     if bad:
         raise SystemExit(f"unknown steps: {bad} (allowed: {sorted(allowed)})")
