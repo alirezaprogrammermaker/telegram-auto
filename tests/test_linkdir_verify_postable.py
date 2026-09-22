@@ -17,7 +17,12 @@ class _FakeCatalog:
     def list_items(self, **kwargs: Any) -> list[dict[str, Any]]:
         if kwargs.get("status") == "review":
             return list(self._review)
+        if kwargs.get("promo_ready") is True:
+            return [r for r in self._top if r.get("promo_ready")]
         return list(self._top)
+
+    def _local_list_items(self, **kwargs: Any) -> list[dict[str, Any]]:
+        return []
 
 
 def test_load_verify_pool_prefers_review_unknowns_over_known_keeps() -> None:

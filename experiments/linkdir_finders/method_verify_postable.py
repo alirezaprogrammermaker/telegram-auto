@@ -72,9 +72,15 @@ def _load_verify_pool(catalog: LinkDirCatalog, *, pool_limit: int) -> list[dict[
     seen: set[str] = set()
     batches = (
         catalog.list_items(status="review", limit=pool_limit),
+        # Legacy promo_ready rows often lack members_can_send; they never sit in review.
+        catalog.list_items(promo_ready=True, limit=pool_limit),
         catalog.list_items(limit=pool_limit),
     )
-    for batch in batches:
+    try:
+        local_extra = catalog._local_list_items(limit=max(pool_limit, 100))
+    except Exception:  # noqa: BLE001
+        local_extra = []
+    for batch in (*batches, local_extra):
         for row in batch or []:
             if not isinstance(row, dict):
                 continue
@@ -104,7 +110,7 @@ async def run_verify_postable(
     config = cfg or load_config()
     safety = config.get("safety") or {}
     vcfg = config.get("verify_postable") or {}
-    guard = SafetyGuard(safety)
+    guard = SafetyGuard(safety, collector_id=collector_id)
     catalog = LinkDirCatalog(collector_id=collector_id)
 
     stats: dict[str, Any] = {
@@ -280,6 +286,24 @@ async def run_verify_postable(
         catalog.export_promo_ready(limit=int(cat_cfg.get("promo_limit") or 200))
         stats["safety"] = guard.snapshot()
         stats["catalog_counts"] = catalog.counts()
+        try:
+            from datetime import datetime, timezone
+
+            from app.paths import ensure_pool_dir, pool_path
+            from app.storage import save_json
+
+            ensure_pool_dir()
+            save_json(
+                pool_path("linkdir_verify_last.json"),
+                {
+                    "at": datetime.now(timezone.utc)
+                    .replace(microsecond=0)
+                    .isoformat(),
+                    **stats,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            logger.debug("verify last-run snapshot failed", exc_info=True)
         return stats
     finally:
         if created_client and own_client:

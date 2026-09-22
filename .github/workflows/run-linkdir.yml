@@ -144,7 +144,10 @@ jobs:
           python3 -m experiments.linkdir_finders.pipeline once \
             --steps "$STEPS" \
             --session "$SESSION_NAME" \
-            --account-id "$ACCOUNT_ID"
+            --account-id "$ACCOUNT_ID" | tee /tmp/linkdir-summary.json
+          if [ -f data/pool/linkdir_verify_last.json ]; then
+            echo "::notice::verify_postable $(cat data/pool/linkdir_verify_last.json)"
+          fi
 
       - name: Save shared pool
         if: always()
