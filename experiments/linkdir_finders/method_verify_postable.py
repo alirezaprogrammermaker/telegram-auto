@@ -108,6 +108,21 @@ async def run_verify_postable(
         logger.info("verify_postable skipped: allow_joins/daily_joins disabled")
         return stats
 
+    experiment_until = str(vcfg.get("experiment_until") or "").strip()
+    if experiment_until:
+        from datetime import date
+
+        try:
+            until = date.fromisoformat(experiment_until[:10])
+            if date.today() > until:
+                stats["skipped_reason"] = f"experiment_ended:{experiment_until}"
+                logger.info(
+                    "verify_postable skipped: experiment ended on %s", experiment_until
+                )
+                return stats
+        except ValueError:
+            pass
+
     limit = max(1, min(20, int(vcfg.get("per_run_limit") or 6)))
     min_rank = float(vcfg.get("min_rank") or 50)
     min_identity = float(vcfg.get("min_identity") or 35)
