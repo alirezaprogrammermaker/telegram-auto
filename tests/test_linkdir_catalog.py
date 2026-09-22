@@ -1,4 +1,4 @@
-from experiments.linkdir_finders.catalog import should_persist_row
+from experiments.linkdir_finders.catalog import LinkDirCatalog, should_persist_row
 from experiments.linkdir_finders.job_queue import queries_for_set
 from experiments.linkdir_finders.settings import load_config
 
@@ -31,6 +31,28 @@ def test_borderline_junk_with_username_persists() -> None:
             "username": "SomeLinkDir",
         }
     )
+
+
+def test_review_with_members_can_send_becomes_promo_ready(tmp_path) -> None:
+    cat = LinkDirCatalog(path=tmp_path / "catalog.json", collector_id="test")
+    out = cat.upsert_from_search(
+        {
+            "username": "PostableReviewGrp",
+            "title": "لینکدونی تست",
+            "verdict": "review",
+            "rank_score": 62,
+            "identity_score": 55,
+            "quality_score": 40,
+            "members_can_send": True,
+            "postable": True,
+            "promo_eligible": True,
+            "is_group": True,
+        },
+        method="test",
+    )
+    assert out.get("promo_ready") is True
+    assert out.get("status") == "active"
+    assert out.get("members_can_send") is True
 
 
 def test_query_shards_are_non_empty() -> None:

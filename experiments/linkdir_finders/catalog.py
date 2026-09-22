@@ -249,12 +249,18 @@ class LinkDirCatalog:
             if verdict == "keep" and promo_ok:
                 item["status"] = "active"
                 item["promo_ready"] = True
+                item["seed_only"] = False
             elif verdict == "keep" and not promo_ok:
                 # Useful as seed/source, not as promo target
                 item["status"] = "review"
                 item["verdict"] = "review"
                 item["promo_ready"] = False
                 item["seed_only"] = True
+            elif verdict == "review" and promo_ok:
+                # Below keep bar but members can post — sync can still claim these.
+                item["status"] = "active"
+                item["promo_ready"] = True
+                item["seed_only"] = False
             elif verdict == "review":
                 item["status"] = "review"
                 item["promo_ready"] = False
@@ -604,7 +610,19 @@ class LinkDirCatalog:
                     "last_ranked_at": r.get("last_ranked_at"),
                     "kind": r.get("kind"),
                     "members_can_send": r.get("members_can_send"),
-                    "postable": r.get("postable") if r.get("postable") is not None else (r.get("members_can_send") is True),
+                    "postable": (
+                        r.get("postable")
+                        if r.get("postable") is not None
+                        else (
+                            True
+                            if r.get("members_can_send") is True
+                            else (
+                                False
+                                if r.get("members_can_send") is False
+                                else None
+                            )
+                        )
+                    ),
                     "activity": {
                         "last_message_age_hours": (r.get("activity") or {}).get(
                             "last_message_age_hours"
