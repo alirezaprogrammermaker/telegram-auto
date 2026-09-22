@@ -146,7 +146,8 @@ jobs:
             --session "$SESSION_NAME" \
             --account-id "$ACCOUNT_ID" | tee /tmp/linkdir-summary.json
           if [ -f data/pool/linkdir_verify_last.json ]; then
-            echo "::notice::verify_postable $(cat data/pool/linkdir_verify_last.json)"
+            VERIFY_LINE="$(python3 -c 'import json; print(json.dumps(json.load(open("data/pool/linkdir_verify_last.json")),separators=(",",":")))')"
+            echo "::notice title=verify_postable::$VERIFY_LINE"
           fi
 
       - name: Save shared pool
