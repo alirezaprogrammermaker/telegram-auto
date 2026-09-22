@@ -66,6 +66,26 @@ def select_verify_candidates(
     return [row for _score, row in scored[: max(0, limit)]]
 
 
+def _load_verify_pool(catalog: LinkDirCatalog, *, pool_limit: int) -> list[dict[str, Any]]:
+    """Merge review-first rows so unknown-postable groups are actually reachable."""
+    rows: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    batches = (
+        catalog.list_items(status="review", limit=pool_limit),
+        catalog.list_items(limit=pool_limit),
+    )
+    for batch in batches:
+        for row in batch or []:
+            if not isinstance(row, dict):
+                continue
+            key = str(row.get("username") or row.get("ref") or "").strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            rows.append(row)
+    return rows
+
+
 async def _leave_quietly(client: Any, entity: Any) -> None:
     try:
         await client(LeaveChannelRequest(entity))
@@ -128,10 +148,12 @@ async def run_verify_postable(
     min_identity = float(vcfg.get("min_identity") or 35)
     sample_n = max(0, int(vcfg.get("sample") or 15))
     leave_after = bool(vcfg.get("leave_after", True))
-    pool_limit = max(limit * 5, 40)
+    pool_limit = max(limit * 20, 80)
 
-    rows = catalog.list_items(limit=pool_limit)
-    # Prefer review/unknown postable; list_items may mix statuses
+    # Top-N list_items prefers promo_ready keeps (already known postable). Unknown
+    # send-rights were demoted to status=review — pull that queue first or we
+    # burn the experiment join budget on empty candidate sets.
+    rows = _load_verify_pool(catalog, pool_limit=pool_limit)
     candidates = select_verify_candidates(
         rows,
         limit=limit,

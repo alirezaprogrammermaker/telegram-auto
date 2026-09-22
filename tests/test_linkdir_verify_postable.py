@@ -1,7 +1,52 @@
 """Tests for experimental postable-verify candidate selection."""
 from __future__ import annotations
 
-from experiments.linkdir_finders.method_verify_postable import select_verify_candidates
+from typing import Any
+
+from experiments.linkdir_finders.method_verify_postable import (
+    _load_verify_pool,
+    select_verify_candidates,
+)
+
+
+class _FakeCatalog:
+    def __init__(self, *, review: list[dict[str, Any]], top: list[dict[str, Any]]) -> None:
+        self._review = review
+        self._top = top
+
+    def list_items(self, **kwargs: Any) -> list[dict[str, Any]]:
+        if kwargs.get("status") == "review":
+            return list(self._review)
+        return list(self._top)
+
+
+def test_load_verify_pool_prefers_review_unknowns_over_known_keeps() -> None:
+    catalog = _FakeCatalog(
+        review=[
+            {
+                "username": "review_unknown",
+                "members_can_send": None,
+                "rank_score": 70,
+            }
+        ],
+        top=[
+            {
+                "username": "keep_known",
+                "members_can_send": True,
+                "rank_score": 99,
+                "promo_ready": True,
+            },
+            {
+                "username": "review_unknown",
+                "members_can_send": None,
+                "rank_score": 70,
+            },
+        ],
+    )
+    rows = _load_verify_pool(catalog, pool_limit=40)
+    assert [r["username"] for r in rows] == ["review_unknown", "keep_known"]
+    picked = select_verify_candidates(rows, limit=5, min_rank=50, min_identity=0)
+    assert [r["username"] for r in picked] == ["review_unknown"]
 
 
 def test_select_verify_candidates_prefers_unknown_postable_high_rank() -> None:
