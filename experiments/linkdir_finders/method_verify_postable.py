@@ -51,6 +51,10 @@ def select_verify_candidates(
         kind = str(row.get("kind") or "").lower()
         if kind in {"broadcast_channel"}:
             continue
+        # Prefer real groups when ranking ties — channels rarely become postable.
+        kind_bonus = 0.0
+        if kind in {"megagroup", "gigagroup"} or row.get("megagroup") or row.get("is_group"):
+            kind_bonus = 5.0
         try:
             rank = float(row.get("rank_score") or 0)
         except (TypeError, ValueError):
@@ -61,7 +65,7 @@ def select_verify_candidates(
             identity = 0.0
         if rank < min_rank or identity < min_identity:
             continue
-        scored.append((rank + identity / 100.0, row))
+        scored.append((rank + identity / 100.0 + kind_bonus, row))
     scored.sort(key=lambda x: x[0], reverse=True)
     return [row for _score, row in scored[: max(0, limit)]]
 

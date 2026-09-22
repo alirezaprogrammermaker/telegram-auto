@@ -40,8 +40,8 @@ _DEFAULTS: dict[str, Any] = {
     "verify_postable": {
         "experiment_until": "2026-09-24",
         "per_run_limit": 6,
-        "min_rank": 50,
-        "min_identity": 35,
+        "min_rank": 45,
+        "min_identity": 30,
         "sample": 15,
         "leave_after": True,
     },
