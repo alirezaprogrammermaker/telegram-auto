@@ -95,7 +95,14 @@ async def run_rerank(
                 # If unreadable now, push toward junk via empty activity
                 if row:
                     try:
-                        catalog.upsert_from_search(row, method="rerank", save=False)
+                        catalog.upsert_from_search(
+                            row,
+                            method="rerank",
+                            save=False,
+                            junk_rank_floor=float(
+                                cat_cfg.get("junk_rank_floor") or 35
+                            ),
+                        )
                         stats["updated"] += 1
                         v = row.get("verdict")
                         if v in stats:
@@ -106,7 +113,12 @@ async def run_rerank(
                 continue
 
             try:
-                catalog.upsert_from_search(row, method="rerank", save=False)
+                catalog.upsert_from_search(
+                    row,
+                    method="rerank",
+                    save=False,
+                    junk_rank_floor=float(cat_cfg.get("junk_rank_floor") or 35),
+                )
                 stats["updated"] += 1
                 v = row.get("verdict")
                 if v in stats:
@@ -124,7 +136,8 @@ async def run_rerank(
 
         catalog.save()
         stale_n = catalog.mark_stale(
-            older_than_hours=float(cat_cfg.get("stale_hours") or 72)
+            older_than_hours=float(cat_cfg.get("stale_hours") or 120),
+            stale_rank_grace=float(cat_cfg.get("stale_rank_grace") or 0),
         )
         export_path = catalog.export_promo_ready(
             limit=int(cat_cfg.get("promo_limit") or 200)

@@ -276,10 +276,16 @@ async def run_snowball(
         if verdict == "junk" and identity < min_upsert_identity:
             stats["upsert_skipped"] += 1
             return False
+        cat_cfg_local = config.get("catalog") or {}
         try:
             key_ref = str(row.get("ref") or "").lower()
             before = key_ref in known
-            result = catalog.upsert_from_search(row, method=method, save=False)
+            result = catalog.upsert_from_search(
+                row,
+                method=method,
+                save=False,
+                junk_rank_floor=float(cat_cfg_local.get("junk_rank_floor") or 35),
+            )
             if result.get("skipped"):
                 stats["upsert_skipped"] += 1
                 return False

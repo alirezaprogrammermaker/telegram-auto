@@ -90,8 +90,8 @@
     "delay_max": 7.0
   },
   "verify_postable": {
-    "experiment_until": "2026-09-24",
-    "per_run_limit": 6,
+    "experiment_until": "2026-12-31",
+    "per_run_limit": 8,
     "min_rank": 45,
     "min_identity": 30,
     "sample": 15,
@@ -138,18 +138,19 @@
     "skip_junk_catalog": true
   },
   "catalog": {
-    "stale_hours": 72,
+    "stale_hours": 120,
     "promo_limit": 200,
     "skip_junk_upsert": true,
-    "junk_rank_floor": 40
+    "junk_rank_floor": 35,
+    "stale_rank_grace": 80
   },
   "rerank": {
-    "limit": 25,
+    "limit": 35,
     "sample": 25,
     "delay": 2.0,
     "include_review": true,
     "include_stale": true,
-    "stale_limit": 8
+    "stale_limit": 12
   },
   "pipeline": {
     "steps": ["search", "snowball", "rerank"],

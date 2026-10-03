@@ -271,7 +271,10 @@ async def run_search(
         for row in all_rows:
             try:
                 result = catalog.upsert_from_search(
-                    row, method="telegram_contacts_search", save=False
+                    row,
+                    method="telegram_contacts_search",
+                    save=False,
+                    junk_rank_floor=float(cat_cfg.get("junk_rank_floor") or 35),
                 )
                 if result.get("skipped"):
                     skipped += 1
@@ -281,7 +284,8 @@ async def run_search(
                 skipped += 1
         catalog.save()
         stale_n = catalog.mark_stale(
-            older_than_hours=float(cat_cfg.get("stale_hours") or 72)
+            older_than_hours=float(cat_cfg.get("stale_hours") or 120),
+            stale_rank_grace=float(cat_cfg.get("stale_rank_grace") or 0),
         )
         export_path = catalog.export_promo_ready(
             limit=int(cat_cfg.get("promo_limit") or 200)

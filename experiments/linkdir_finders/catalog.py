@@ -49,7 +49,9 @@ def normalize_ref(username: str | None, chat_id: Any = None) -> str | None:
     return None
 
 
-def should_persist_row(row: dict[str, Any]) -> bool:
+def should_persist_row(
+    row: dict[str, Any], *, junk_rank_floor: float = 35.0
+) -> bool:
     """Return False for low-signal junk that should not pollute the catalog."""
     verdict = str(row.get("verdict") or "junk")
     if verdict in {"keep", "review"}:
@@ -58,7 +60,7 @@ def should_persist_row(row: dict[str, Any]) -> bool:
     identity = float(row.get("identity_score") or 0)
     has_username = bool(str(row.get("username") or "").strip())
     # Persist borderline junk only when it is identifiable enough to skip later.
-    return rank >= 40 and identity >= 35 and has_username
+    return rank >= junk_rank_floor and identity >= 35 and has_username
 
 
 class LinkDirCatalog:
@@ -145,7 +147,12 @@ class LinkDirCatalog:
             self._requeue_sync(batch)
 
     def upsert_from_search(
-        self, row: dict[str, Any], *, method: str, save: bool = True
+        self,
+        row: dict[str, Any],
+        *,
+        method: str,
+        save: bool = True,
+        junk_rank_floor: float = 35.0,
     ) -> dict[str, Any]:
         """Merge one search/rank row into the catalog.
 
@@ -161,7 +168,7 @@ class LinkDirCatalog:
         if verdict not in VERDICTS:
             verdict = "junk"
 
-        if not should_persist_row(row):
+        if not should_persist_row(row, junk_rank_floor=junk_rank_floor):
             return {
                 "skipped": True,
                 "reason": "junk_low_signal",
@@ -426,10 +433,22 @@ class LinkDirCatalog:
         except Exception as exc:
             logger.warning("linkdir bridge record_run failed: %s", exc)
 
-    def mark_stale(self, *, older_than_hours: float = 72.0) -> int:
-        """Mark active/review items not seen recently as stale (not deleted)."""
+    def mark_stale(
+        self,
+        *,
+        older_than_hours: float = 72.0,
+        stale_rank_grace: float = 0.0,
+    ) -> int:
+        """Mark active/review items not seen recently as stale (not deleted).
+
+        ``stale_rank_grace`` (rank threshold, 0 disables) protects high-ranking
+        active items from being demoted during a single stale sweep: strong
+        groups that the rerank budget simply did not reach this cycle stay
+        promo_ready until the next sweep instead of flashing off.
+        """
         now = datetime.now(timezone.utc)
         n = 0
+        protected = 0
         with self._lock:
             for item in (self._data.get("items") or {}).values():
                 if not isinstance(item, dict):
@@ -444,14 +463,28 @@ class LinkDirCatalog:
                 except ValueError:
                     continue
                 age_h = (now - dt).total_seconds() / 3600.0
-                if age_h > older_than_hours:
-                    item["status"] = "stale"
-                    item["promo_ready"] = False
-                    item["stale_at"] = utc_now()
-                    n += 1
-            if n:
+                if age_h <= older_than_hours:
+                    continue
+                if stale_rank_grace > 0:
+                    try:
+                        rank = float(item.get("rank_score") or 0)
+                    except (TypeError, ValueError):
+                        rank = 0.0
+                    if item.get("status") == "active" and rank >= stale_rank_grace:
+                        protected += 1
+                        continue
+                item["status"] = "stale"
+                item["promo_ready"] = False
+                item["stale_at"] = utc_now()
+                n += 1
+            if n or protected:
                 self._save_locked()
         if n:
+            logger.info(
+                "mark_stale: %s items demoted, %s high-rank active protected",
+                n,
+                protected,
+            )
             self._flush_bridge_sync()
         try:
             from app.linkdir_bridge import is_available, mark_stale as bridge_mark_stale

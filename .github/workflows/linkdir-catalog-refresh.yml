@@ -37,7 +37,7 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: data/pool
-          key: pool-${{ github.repository }}-v1-${{ github.run_id }}
+          key: pool-${{ github.repository }}-v1
           restore-keys: |
             pool-${{ github.repository }}-v1-
             pool-${{ github.repository }}-
@@ -89,12 +89,14 @@ jobs:
           STEPS="${{ inputs.steps || 'search,snowball,rerank' }}"
           python -m experiments.linkdir_finders.pipeline once --steps "$STEPS" --session "$SESSION_NAME"
 
-      - name: Save shared pool (catalog)
+      - name: Upload pool snapshot
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/upload-artifact@v4
         with:
+          name: pool-${{ github.run_id }}
           path: data/pool
-          key: pool-${{ github.repository }}-v1-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 1
 
       - name: Upload promo_ready artifact
         if: always()
@@ -106,3 +108,12 @@ jobs:
             data/pool/linkdir_catalog.json
           if-no-files-found: warn
           retention-days: 14
+
+  # Serialized merge into the canonical pool cache (shared with run-linkdir-*).
+  # Runs even if refresh failed so partial catalog updates still land.
+  pool-merge:
+    if: ${{ !cancelled() }}
+    needs: refresh
+    uses: ./.github/workflows/pool-merge.yml
+    with:
+      artifact: pool-${{ github.run_id }}

@@ -1,0 +1,66 @@
+# Serialized merge of a collector's data/pool snapshot into the canonical
+# pool cache. All pool writers (run-linkdir-*, linkdir-catalog-refresh)
+# funnel through this job so concurrent collectors can never
+# last-writer-wins away each other's catalog updates.
+
+name: pool-merge
+
+on:
+  workflow_call:
+    inputs:
+      artifact:
+        description: "Name of the pool snapshot artifact to merge"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: linkdir-pool-merge
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore canonical pool cache
+        # Fixed key = single canonical entry; missing cache (fresh repo) is fine.
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1
+
+      - name: Download pool snapshot
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}
+          path: pool-artifact
+
+      - name: Merge snapshot into pool
+        run: |
+          set -euo pipefail
+          python scripts/merge_pool_cache.py pool-artifact data/pool
+
+      - name: Re-export promo ready
+        run: |
+          set -euo pipefail
+          python -m experiments.linkdir_finders.catalog_cli export
+
+      - name: Save canonical pool cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1

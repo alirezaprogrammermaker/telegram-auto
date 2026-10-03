@@ -257,7 +257,12 @@ async def run_verify_postable(
                 )
                 apply_rank(updated)
                 catalog.upsert_from_search(
-                    updated, method="verify_postable_join", save=False
+                    updated,
+                    method="verify_postable_join",
+                    save=False,
+                    junk_rank_floor=float(
+                        (config.get("catalog") or {}).get("junk_rank_floor") or 35
+                    ),
                 )
                 stats["upserted"] += 1
                 mcs = updated.get("members_can_send")

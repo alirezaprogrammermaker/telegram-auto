@@ -33,6 +33,7 @@ on:
 
 permissions:
   contents: read
+  actions: write
 
 jobs:
   collect:
@@ -68,10 +69,10 @@ jobs:
             data-${{ github.repository }}-
 
       - name: Restore shared pool (linkdir catalog cache)
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: data/pool
-          key: pool-${{ github.repository }}-v1-${{ github.run_id }}
+          key: pool-${{ github.repository }}-v1
           restore-keys: |
             pool-${{ github.repository }}-v1-
             pool-${{ github.repository }}-
@@ -150,12 +151,14 @@ jobs:
             echo "::notice title=verify_postable::$VERIFY_LINE"
           fi
 
-      - name: Save shared pool
+      - name: Upload pool snapshot
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/upload-artifact@v4
         with:
+          name: pool-${{ github.run_id }}
           path: data/pool
-          key: pool-${{ github.repository }}-v1-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 1
 
       - name: Save account data
         if: always()
@@ -163,3 +166,13 @@ jobs:
         with:
           path: data/${{ inputs.account_id }}
           key: data-${{ github.repository }}-${{ inputs.account_id }}-v1-${{ github.run_id }}
+
+  # Serialized merge so concurrent collectors can't last-writer-wins away
+  # each other's catalog updates. Runs even if collect failed (pipeline may
+  # have written partial catalog updates worth keeping).
+  pool-merge:
+    if: ${{ !cancelled() }}
+    needs: collect
+    uses: ./.github/workflows/pool-merge.yml
+    with:
+      artifact: pool-${{ github.run_id }}

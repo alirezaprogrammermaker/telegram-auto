@@ -190,7 +190,8 @@ async def run_once(
         # Always refresh export at end
         catalog = LinkDirCatalog(collector_id=collector_id)
         stale_n = catalog.mark_stale(
-            older_than_hours=float(cat_cfg.get("stale_hours") or 72)
+            older_than_hours=float(cat_cfg.get("stale_hours") or 120),
+            stale_rank_grace=float(cat_cfg.get("stale_rank_grace") or 0),
         )
         export_path = catalog.export_promo_ready(
             limit=int(cat_cfg.get("promo_limit") or 200)
