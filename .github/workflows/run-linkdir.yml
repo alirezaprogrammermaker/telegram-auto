@@ -167,12 +167,56 @@ jobs:
           path: data/${{ inputs.account_id }}
           key: data-${{ github.repository }}-${{ inputs.account_id }}-v1-${{ github.run_id }}
 
-  # Serialized merge so concurrent collectors can't last-writer-wins away
-  # each other's catalog updates. Runs even if collect failed (pipeline may
-  # have written partial catalog updates worth keeping).
+  # Serialized merge into the canonical pool cache. Inlined (not a nested
+  # reusable-workflow call — a reusable workflow calling another one fails
+  # startup validation). The global concurrency group still serializes pool
+  # writes across all run-linkdir-* runs and linkdir-catalog-refresh.
+  # Runs even if collect failed: the pipeline may have written partial
+  # catalog updates worth keeping.
   pool-merge:
     if: ${{ !cancelled() }}
     needs: collect
-    uses: ./.github/workflows/pool-merge.yml
-    with:
-      artifact: pool-${{ github.run_id }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: linkdir-pool-merge
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Restore canonical pool cache
+        continue-on-error: true
+        uses: actions/cache/restore@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1
+
+      - name: Download pool snapshot
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: pool-${{ github.run_id }}
+          path: pool-artifact
+
+      - name: Merge snapshot into pool
+        run: |
+          set -euo pipefail
+          python scripts/merge_pool_cache.py pool-artifact data/pool
+
+      - name: Re-export promo ready
+        run: |
+          set -euo pipefail
+          python -m experiments.linkdir_finders.catalog_cli export
+
+      - name: Save canonical pool cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: data/pool
+          key: pool-${{ github.repository }}-v1
