@@ -33,7 +33,9 @@ on:
 
 permissions:
   contents: read
-  actions: write
+# NOTE: no 'actions: write' here. This is a reusable workflow; requesting
+# a scope the caller did not grant fails GitHub startup validation
+# (startup_failure). The inherited token already covers artifacts/cache.
 
 jobs:
   collect:
